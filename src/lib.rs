@@ -16,7 +16,7 @@ enum EngineOption {
         min: Option<i32>,
         max: Option<i32>,
     }
-}
+} //
 
 
 struct Engine {
@@ -28,11 +28,17 @@ struct Engine {
     stdout: BufReader<ChildStdout>,
 } //
 
+enum TimeControl {
+    INFINITE,
+    TIME_PER_MOVE(i32), // in ms
+}
+
 struct Game {
     white: Engine,
     black: Engine,
     moves_list: Vec<String>,
     board: Board,
+    time_control: TimeControl
 }
 
 #[derive(Debug)]
@@ -44,16 +50,18 @@ struct GameResult {
 }
 
 impl Game {
-    pub fn new(white: Engine, black: Engine) -> Self {
+    pub fn new(white: Engine, black: Engine, time_control: TimeControl) -> Self {
         Game {
             white,
             black,
             moves_list: Vec::new(),
             board: Board::new(),
+            time_control
         }
     } //
 
     pub fn play(&mut self) -> GameResult {
+        let start_time = std::time::Instant::now();
         loop {
             let valid_moves = self.board.generate_moves();
             if valid_moves.is_empty() {
@@ -79,7 +87,15 @@ impl Game {
                     format!("position startpos moves {}\n", self.moves_list.join(" ")).as_str(),
                 );
             }
-            engine.send_command("go movetime 10\n");
+
+            match self.time_control {
+                TimeControl::INFINITE => {
+                    engine.send_command("go infinite\n");
+                }
+                TimeControl::TIME_PER_MOVE(time) => {
+                    engine.send_command(format!("go movetime {}\n", time).as_str());
+                }
+            }
 
             loop {
                 if let Some(line) = engine.read_line() {
@@ -260,10 +276,7 @@ mod test {
             "Stockfish",
         );
 
-        dbg!(engine.engine_options);
-        dbg!(engine2.engine_options);
-
-        // let mut game = Game::new(engine , engine2);
+        let mut game = Game::new(engine , engine2, TimeControl::INFINITE);
         // dbg!(game.play());
 
     }
