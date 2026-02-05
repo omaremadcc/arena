@@ -4,9 +4,25 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use queenfish::board::{Board, Move, Turn};
 
+#[derive(Debug)]
+enum EngineOption {
+    CHECK {
+        name: String,
+        value: bool
+    },
+    SPIN {
+        name: String,
+        value: i32,
+        min: Option<i32>,
+        max: Option<i32>,
+    }
+}
+
+
 struct Engine {
     path: String,
     name: String,
+    engine_options: Vec<EngineOption>,
     child_process: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -133,13 +149,17 @@ impl Engine {
             panic!("Engine is not UCI compatible");
         }
 
-        Engine {
+        let mut engine = Engine {
             path: path.to_str().unwrap().to_string(),
             name: name.to_string(),
+            engine_options: Vec::new(),
             child_process: engine_process,
             stdin,
             stdout,
-        }
+        };
+
+        engine.detect_engine_options();
+        engine
     } //
 
     pub fn send_command(&mut self, command: &str) {
@@ -154,13 +174,76 @@ impl Engine {
         self.stdout.read_line(&mut line).ok()?;
         if line.is_empty() { None } else { Some(line) }
     } //
+
+    pub fn detect_engine_options(&mut self) {
+        self.send_command("uci\n");
+        let mut options = vec![];
+        loop {
+            if let Some(str) = self.read_line() {
+                println!("line: {}" , str);
+                if str.starts_with("option") {
+                    let args = str.split_whitespace().collect::<Vec<_>>();
+                    let option_type;
+                    let value;
+                    let name;
+
+                    if let Some(name_index) = args.iter().position(|w| w == &"name") {
+                        name = args[name_index + 1].to_string();
+                    } else {
+                        continue;
+                    }
+                    if let Some(default_index) = args.iter().position(|w| w == &"default") {
+                        value = args[default_index + 1].to_string();
+                    } else {
+                        continue;
+                    }
+                    if let Some(option_type_index) = args.iter().position(|w| w == &"type") {
+                        option_type = args[option_type_index + 1].to_string();
+                    } else {
+                        continue;
+                    }
+
+                    match option_type.as_str() {
+                        "check" => {
+                            options.push(EngineOption::CHECK {
+                                name,
+                                value: value.parse::<bool>().unwrap(),
+                            });
+                        }
+                        "spin" => {
+                            let mut min = None;
+                            let mut max = None;
+                            if let Some(min_index) = args.iter().position(|w| w == &"min") {
+                                min = Some(args[min_index + 1].parse::<i32>().unwrap());
+                            }
+                            if let Some(max_index) = args.iter().position(|w| w == &"max") {
+                                max = Some(args[max_index + 1].parse::<i32>().unwrap());
+                            }
+                            options.push(EngineOption::SPIN {
+                                name,
+                                value: value.parse::<i32>().unwrap(),
+                                min,
+                                max
+                            });
+                        }
+                        _ => {}
+                    }
+                } else if str.contains("uciok") {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        self.engine_options = options;
+    } //
 } //
 
+#[cfg(test)]
 mod test {
     use super::*;
     use queenfish::board::bishop_magic::init_bishop_magics;
     use queenfish::board::rook_magic::init_rook_magics;
-    use queenfish::board::{Board, Move, Turn};
 
     #[test]
     fn it_works() {
@@ -177,8 +260,11 @@ mod test {
             "Stockfish",
         );
 
-        let mut game = Game::new(engine , engine2);
-        dbg!(game.play());
+        dbg!(engine.engine_options);
+        dbg!(engine2.engine_options);
+
+        // let mut game = Game::new(engine , engine2);
+        // dbg!(game.play());
 
     }
 } //
