@@ -5,3 +5,9 @@ edition = "2024"
 
 [dependencies]
 queenfish = { git = "https://github.com/OM3X4/QueenFish" }
+gpui = { version = "*" }
+unicode-segmentation = "1.12.0"
+
+[[bin]]
+name = "gpui"
+path = "src/bin/gpui.rs"
