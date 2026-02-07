@@ -1,6 +1,9 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
+use std::thread;
 
 enum EngineOption {
     CHECK {
@@ -106,13 +109,152 @@ impl Engine {
             stdin: stdin,
             stdout: stdout,
         }
-    }
+    } //
+
+    pub fn spawn_handle(&self) -> EngineHandle {
+        let (cmd_tx, cmd_rx): (Sender<String>, Receiver<String>) = mpsc::channel();
+        let (evt_tx, evt_rx): (Sender<String>, Receiver<String>) = mpsc::channel();
+
+        let mut child_process = Command::new(&self.path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to start engine process");
+        let mut stdin = child_process
+            .stdin
+            .take()
+            .expect("Failed to take engine stdin");
+        let stdout = BufReader::new(
+            child_process
+                .stdout
+                .take()
+                .expect("Failed to take engine stdout"),
+        );
+
+        // stdin writer task
+        thread::spawn(move || {
+            while let Ok(cmd) = cmd_rx.recv() {
+                let _ = stdin.write_all(cmd.as_bytes());
+                let _ = stdin.flush();
+            }
+        });
+
+        // stdout reader task
+        thread::spawn(move || {
+            let mut reader = stdout;
+            let mut line = String::new();
+
+            loop {
+                line.clear();
+                if reader
+                    .read_line(&mut line)
+                    .ok()
+                    .filter(|&n| n > 0)
+                    .is_none()
+                {
+                    break;
+                }
+                let _ = evt_tx.send(line.clone());
+            }
+        });
+
+        EngineHandle {
+            process: child_process,
+            tx: cmd_tx,
+            rx: evt_rx,
+        }
+    } //
 }
 
 pub struct EngineProcess {
     child_process: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+}
+
+pub struct EngineHandle {
+    process: Child,
+    pub tx: Sender<String>,
+    pub rx: Receiver<String>,
+}
+
+impl EngineHandle {
+    pub fn send_command(&self, command: &str) {
+        self.tx.send(command.to_string()).ok();
+    } //
+    pub fn read_line(&self) -> Option<String> {
+        self.rx.recv().ok()
+    } //
+    pub fn try_read_line(&self) -> Option<String> {
+        self.rx.try_recv().ok()
+    }
+
+    pub fn detect_engine_options(&mut self) {
+        self.send_command("uci\n");
+        let mut options = vec![];
+        loop {
+            if let Some(str) = self.read_line() {
+                println!("line: {}", str);
+                if str.starts_with("option") {
+                    let args = str.split_whitespace().collect::<Vec<_>>();
+                    let option_type;
+                    let value;
+                    let name;
+
+                    if let Some(name_index) = args.iter().position(|w| w == &"name") {
+                        name = args[name_index + 1].to_string();
+                    } else {
+                        continue;
+                    }
+                    if let Some(default_index) = args.iter().position(|w| w == &"default") {
+                        value = args[default_index + 1].to_string();
+                    } else {
+                        continue;
+                    }
+                    if let Some(option_type_index) = args.iter().position(|w| w == &"type") {
+                        option_type = args[option_type_index + 1].to_string();
+                    } else {
+                        continue;
+                    }
+
+                    match option_type.as_str() {
+                        "check" => {
+                            options.push(EngineOption::CHECK {
+                                name,
+                                value: value.parse::<bool>().unwrap(),
+                            });
+                        }
+                        "spin" => {
+                            let mut min = None;
+                            let mut max = None;
+                            if let Some(min_index) = args.iter().position(|w| w == &"min") {
+                                min = Some(args[min_index + 1].parse::<i32>().unwrap());
+                            }
+                            if let Some(max_index) = args.iter().position(|w| w == &"max") {
+                                max = Some(args[max_index + 1].parse::<i32>().unwrap());
+                            }
+                            options.push(EngineOption::SPIN {
+                                name,
+                                value: value.parse::<i32>().unwrap(),
+                                min,
+                                max,
+                            });
+                        }
+                        _ => {}
+                    }
+                } else if str.contains("uciok") {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        options;
+    } //
+
+    pub fn disconnect(&mut self) {
+        self.send_command("quit\n");
+    } //
 }
 
 impl EngineProcess {

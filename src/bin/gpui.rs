@@ -1,4 +1,4 @@
-use arena::Engine;
+use arena::{Engine, EngineHandle};
 use gpui::{
     App, Application, Bounds, Context, Focusable, Rgba, Window, WindowBounds, WindowOptions, div,
     img, prelude::*, px, rgb, size,
@@ -6,11 +6,9 @@ use gpui::{
 use queenfish::board::Board as QueenFishBoard;
 use queenfish::board::bishop_magic::init_bishop_magics;
 use queenfish::board::rook_magic::init_rook_magics;
-use std::thread;
 use std::{
     collections::HashSet,
     path::Path,
-    sync::mpsc::{self, Receiver, Sender},
 };
 
 const WHITE_PAWN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wP.svg";
@@ -39,8 +37,7 @@ struct Board {
     focus_handle: gpui::FocusHandle,
     available_moves: Vec<(u8, u8)>,
     analysis: Vec<String>,
-    analysis_rx: Option<Receiver<String>>,
-    engine_tx: Option<Sender<String>>,
+    engine_handle: Option<EngineHandle>
 }
 
 impl Focusable for Board {
@@ -58,6 +55,9 @@ impl Board {
             .map(|mv| mv.1)
             .collect::<Vec<_>>();
         if available_squares.contains(&square) {
+            self.engine_handle.as_mut().unwrap().send_command("stop\n");
+            self.analysis.clear();
+
             let selected_mv = self
                 .available_moves
                 .iter()
@@ -78,22 +78,20 @@ impl Board {
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect();
-            dbg!(&avail_squares);
             self.available_moves = avail_squares;
         }
     } //
 
     pub fn analyze(&mut self, cx: &mut Context<Self>) {
-        let Some(tx) = self.engine_tx.as_mut() else {
-            eprintln!("engine_tx missing");
+        let Some(handle) = self.engine_handle.as_mut() else {
+            eprintln!("engine handle missing");
             return;
         };
 
         self.analysis.clear();
 
-        tx.send("stop\n".to_string()).ok();
-        tx.send(format!("position fen {} 0 1\ngo\n", self.board.to_fen()))
-            .ok();
+        handle.send_command("stop\n");
+        handle.send_command(format!("position fen {} 0 1\ngo\n", self.board.to_fen()).as_str());
 
         cx.notify();
     } //
@@ -102,49 +100,23 @@ impl Board {
         let mut board = QueenFishBoard::new();
         board.load_from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
 
-        let (cmd_tx, cmd_rx): (Sender<String>, Receiver<String>) = mpsc::channel();
-        let (evt_tx, evt_rx): (Sender<String>, Receiver<String>) = mpsc::channel();
-
-        thread::spawn(move || {
-            println!("Starting the engine");
-            let engine = Engine::new(
-                "C:\\Learn\\LearnRust\\chess\\target\\release\\uci.exe",
-                "Queenfish 2",
-            );
-            let mut engine = engine.spawn_process();
-
-            loop {
-                // commands from UI
-                if let Ok(cmd) = cmd_rx.try_recv() {
-                    println!("cmd: {}", cmd);
-                    engine.send_command(&cmd);
-                }
-
-                // engine output
-                match engine.read_line() {
-                    Some(line) => {
-                        evt_tx.send(line).ok();
-                    }
-                    None => break, // engine exited
-                }
-            }
-        });
+        let engine = Engine::new("C:\\Learn\\LearnRust\\chess\\target\\release\\uci.exe", "Queenfish 2");
+        let engine_handle = engine.spawn_handle();
 
         Board {
             board,
             focus_handle,
             available_moves: Vec::new(),
             analysis: Vec::new(),
-            analysis_rx: Some(evt_rx),
-            engine_tx: Some(cmd_tx),
+            engine_handle: Some(engine_handle),
         }
     }
 }
 
 impl Render for Board {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(rx) = self.analysis_rx.as_mut() {
-            while let Ok(line) = rx.try_recv() {
+        if let Some(handle) = self.engine_handle.as_mut() {
+            while let Some(line) = handle.try_read_line() {
                 self.analysis.push(line[..(line.len() - 2)].to_string());
             }
         }
