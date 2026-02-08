@@ -1,15 +1,12 @@
 use arena::{Engine, EngineHandle};
 use gpui::{
-    App, Application, Bounds, Context, Focusable, Rgba, Window, WindowBounds, WindowOptions, div,
-    img, prelude::*, px, rgb, size,
+    App, Application, Bounds, Context, Focusable, Rgba, Window, WindowBounds,
+    WindowOptions, div, img, prelude::*, px, rgb, size,
 };
 use queenfish::board::Board as QueenFishBoard;
 use queenfish::board::bishop_magic::init_bishop_magics;
 use queenfish::board::rook_magic::init_rook_magics;
-use std::{
-    collections::HashSet,
-    path::Path,
-};
+use std::{collections::HashSet, path::Path};
 
 const WHITE_PAWN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wP.svg";
 const WHITE_KNIGHT: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wN.svg";
@@ -37,7 +34,8 @@ struct Board {
     focus_handle: gpui::FocusHandle,
     available_moves: Vec<(u8, u8)>,
     analysis: Vec<String>,
-    engine_handle: Option<EngineHandle>
+    engine_handle: Option<EngineHandle>,
+    is_analyzing: bool,
 }
 
 impl Focusable for Board {
@@ -88,10 +86,18 @@ impl Board {
             return;
         };
 
-        self.analysis.clear();
+        if self.is_analyzing {
+            handle.send_command("stop\n");
+            self.analysis.clear();
+            self.is_analyzing = false;
+        } else {
+            handle.send_command("stop\n");
+            self.analysis.clear();
+            handle.send_command(dbg!(format!("position fen {} 0 1\ngo\n", self.board.to_fen()).as_str()));
+            self.is_analyzing = true;
+        }
 
-        handle.send_command("stop\n");
-        handle.send_command(format!("position fen {} 0 1\ngo\n", self.board.to_fen()).as_str());
+
 
         cx.notify();
     } //
@@ -100,28 +106,39 @@ impl Board {
         let mut board = QueenFishBoard::new();
         board.load_from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
 
-        let engine = Engine::new("C:\\Learn\\LearnRust\\chess\\target\\release\\uci.exe", "Queenfish 2");
+        let engine = Engine::new(
+            "C:\\Learn\\LearnRust\\chess\\target\\release\\uci.exe",
+            "Queenfish 2",
+        );
         let engine_handle = engine.spawn_handle();
 
-        Board {
+        let element = Board {
             board,
             focus_handle,
             available_moves: Vec::new(),
             analysis: Vec::new(),
             engine_handle: Some(engine_handle),
+            is_analyzing: false,
+        };
+
+        return element;
+    } //
+
+    pub fn poll_engine(&mut self, cx: &mut Context<Self>) {
+        if let Some(handle) = self.engine_handle.as_mut() {
+            while let Some(line) = handle.try_read_line() {
+                self.analysis.push(line);
+                cx.notify();
+            }
         }
-    }
+    } //
 }
 
 impl Render for Board {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(handle) = self.engine_handle.as_mut() {
-            while let Some(line) = handle.try_read_line() {
-                self.analysis.push(line[..(line.len() - 2)].to_string());
-            }
-        }
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.poll_engine(cx);
 
-        let squares = (0..64)
+        let squares = (0..64).collect::<Vec<_>>().chunks(8).rev().flatten().copied()
             .map(|i| {
                 let file = i % 8;
                 let rank = i / 8;
@@ -159,7 +176,8 @@ impl Render for Board {
                     .justify_center()
                     .w(px(40.)) // Adjust size as needed
                     .h(px(40.))
-                    .child(img(Path::new(piece_image)).size_full());
+                    .child(img(Path::new(piece_image)).size_full())
+                    ;
 
                 if self
                     .available_moves
@@ -213,12 +231,12 @@ impl Render for Board {
                 );
                 return element;
             })
-            .rev()
             .collect::<Vec<_>>();
 
         div()
             .bg(rgb(0x161512))
             .size_full()
+            .p_3()
             .flex()
             .flex_grow()
             .flex_col()
@@ -252,6 +270,8 @@ impl Render for Board {
             )
             .child(
                 div()
+                    .id("analysis")
+                    .overflow_y_scroll()
                     .w_full()
                     .h_1_3()
                     .bg(rgb(0x262421))
@@ -263,6 +283,7 @@ impl Render for Board {
                     .children(
                         self.analysis
                             .iter()
+                            .rev()
                             .map(|x| div().child(x.clone()).text_color(gpui::white()).text_sm()),
                     ),
             )
