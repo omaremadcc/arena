@@ -1,7 +1,10 @@
+use arena::gpui::input::{
+    Backspace, Copy, Cut, Delete, End, Home, InputController, InputField, Left, Paste, Right,
+    SelectAll, SelectLeft, SelectRight, ShowCharacterPalette,
+};
 use arena::{Engine, EngineHandle};
 use gpui::{
-    App, Application, Bounds, Context, Focusable, Rgba, Window, WindowBounds,
-    WindowOptions, div, img, prelude::*, px, rgb, size,
+    App, Application, Bounds, Context, Entity, Focusable, KeyBinding, Rgba, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px, rgb, size
 };
 use queenfish::board::Board as QueenFishBoard;
 use queenfish::board::bishop_magic::init_bishop_magics;
@@ -29,6 +32,17 @@ fn dark_board_color() -> Rgba {
     rgb(0xb58863)
 }
 
+struct FenWindow {
+    input_controller: Entity<InputController>
+}
+
+impl Render for FenWindow {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .child(self.input_controller.clone())
+    }
+}
+
 struct Board {
     board: QueenFishBoard,
     focus_handle: gpui::FocusHandle,
@@ -36,6 +50,7 @@ struct Board {
     analysis: Vec<String>,
     engine_handle: Option<EngineHandle>,
     is_analyzing: bool,
+    is_load_fen_window_opened: bool,
 }
 
 impl Focusable for Board {
@@ -93,11 +108,11 @@ impl Board {
         } else {
             handle.send_command("stop\n");
             self.analysis.clear();
-            handle.send_command(dbg!(format!("position fen {} 0 1\ngo\n", self.board.to_fen()).as_str()));
+            handle.send_command(dbg!(
+                format!("position fen {} 0 1\ngo\n", self.board.to_fen()).as_str()
+            ));
             self.is_analyzing = true;
         }
-
-
 
         cx.notify();
     } //
@@ -119,6 +134,7 @@ impl Board {
             analysis: Vec::new(),
             engine_handle: Some(engine_handle),
             is_analyzing: false,
+            is_load_fen_window_opened: false,
         };
 
         return element;
@@ -132,13 +148,29 @@ impl Board {
             }
         }
     } //
+
+    pub fn reset_board(&mut self, cx: &mut Context<Self>) {
+        self.board = QueenFishBoard::new();
+        self.available_moves = Vec::new();
+        if let Some(handle) = self.engine_handle.as_mut() {
+            handle.send_command("stop\n");
+        }
+        self.analysis.clear();
+        self.is_analyzing = false;
+        cx.notify();
+    }
 }
 
 impl Render for Board {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.poll_engine(cx);
 
-        let squares = (0..64).collect::<Vec<_>>().chunks(8).rev().flatten().copied()
+        let squares = (0..64)
+            .collect::<Vec<_>>()
+            .chunks(8)
+            .rev()
+            .flatten()
+            .copied()
             .map(|i| {
                 let file = i % 8;
                 let rank = i / 8;
@@ -176,8 +208,7 @@ impl Render for Board {
                     .justify_center()
                     .w(px(40.)) // Adjust size as needed
                     .h(px(40.))
-                    .child(img(Path::new(piece_image)).size_full())
-                    ;
+                    .child(img(Path::new(piece_image)).size_full());
 
                 if self
                     .available_moves
@@ -237,10 +268,97 @@ impl Render for Board {
             .bg(rgb(0x161512))
             .size_full()
             .p_3()
+            .pt_0()
             .flex()
             .flex_grow()
             .flex_col()
             .gap_2()
+            .child(
+                div()
+                    .w_full()
+                    .bg(gpui::green())
+                    .group("top_menu")
+                    .flex()
+                    .gap_2()
+                    .py(px(2.))
+                    .px_2()
+                    .child(
+                        div()
+                            .child(format!("Reset Board"))
+                            .text_xs()
+                            .text_color(gpui::white())
+                            .invisible()
+                            .group("top_menu")
+                            .group_hover("top_menu", |el| el.visible())
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(move |board, _event, _window, cx| {
+                                    board.reset_board(cx);
+                                }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .child(format!("Load FEN"))
+                            .text_xs()
+                            .text_color(gpui::white())
+                            .invisible()
+                            .group("top_menu")
+                            .group_hover("top_menu", |el| el.visible())
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(move |board, _event, _window, cx| {
+                                    board.is_load_fen_window_opened =
+                                        !board.is_load_fen_window_opened;
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .child(button("Omar", move |_, cx| {
+                        let bounds = Bounds::centered(None, size(px(500.), px(100.)), cx);
+                        let options = WindowOptions {
+                            window_bounds: Some(WindowBounds::Windowed(bounds)),
+                            ..Default::default()
+                        };
+
+                        let text_input = cx.new(|cx| InputField::new(cx));
+                        let input_controller = cx.new(|cx| InputController {
+                            recent_keystrokes: Vec::new(),
+                            focus_handle: cx.focus_handle(),
+                            text_input,
+                        });
+
+                        let window = cx
+                            .open_window(options, |_, cx| {
+                                cx.new(|_cx| FenWindow {
+                                    input_controller
+                                })
+                            })
+                            .unwrap();
+
+                        let view = window.update(cx, |_, _, cx| cx.entity()).unwrap();
+                        cx.observe_keystrokes(move |ev, _, cx| {
+                            view.update(cx, |view, cx| {
+                                view.input_controller.as_mut(cx).recent_keystrokes.push(ev.keystroke.clone());
+                                cx.notify();
+                            })
+                        })
+                        .detach();
+                        cx.on_keyboard_layout_change({
+                            move |cx| {
+                                window.update(cx, |_, _, cx| cx.notify()).ok();
+                            }
+                        })
+                        .detach();
+
+                        // window
+                        //     .update(cx, |view, window, cx| {
+                        //         window.focus(&view.input_controller.as_mut(cx).text_input.focus_handle(cx));
+                        //         cx.activate(true);
+                        //     })
+                        //     .unwrap();
+                    })),
+            )
             .child(
                 div()
                     .w(px(8. * 40.))
@@ -297,9 +415,29 @@ fn main() {
     Application::new().run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(500.), px(500.0)), cx);
 
+        cx.bind_keys([
+            KeyBinding::new("backspace", Backspace, None),
+            KeyBinding::new("delete", Delete, None),
+            KeyBinding::new("left", Left, None),
+            KeyBinding::new("right", Right, None),
+            KeyBinding::new("shift-left", SelectLeft, None),
+            KeyBinding::new("shift-right", SelectRight, None),
+            KeyBinding::new("ctrl-a", SelectAll, None),
+            KeyBinding::new("ctrl-v", Paste, None),
+            KeyBinding::new("ctrl-c", Copy, None),
+            KeyBinding::new("ctrl-x", Cut, None),
+            KeyBinding::new("home", Home, None),
+            KeyBinding::new("end", End, None),
+            KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, None),
+        ]);
+
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some(SharedString::from("Arena")),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             |_, cx| cx.new(|cx| Board::new(cx.focus_handle())),
@@ -307,4 +445,18 @@ fn main() {
         .unwrap();
         cx.activate(true);
     });
+}
+
+fn button(text: &str, on_click: impl Fn(&mut Window, &mut App) + 'static) -> impl IntoElement {
+    div()
+        .flex_none()
+        .px_2()
+        .bg(rgb(0xf7f7f7))
+        .text_color(gpui::black())
+        .border_1()
+        .border_color(rgb(0xe0e0e0))
+        .rounded_sm()
+        .cursor_pointer()
+        .child(text.to_string())
+        .on_any_mouse_down(move |_, window, cx| on_click(window, cx))
 }
