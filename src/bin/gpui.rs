@@ -4,8 +4,7 @@ use arena::gui::input::{
 };
 use arena::{Engine, EngineHandle, gui};
 use gpui::{
-    App, Application, Bounds, Context, Entity, Focusable,
-    KeyBinding, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions,
+    App, Application, Bounds, Context, Entity, Focusable, Global, KeyBinding, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions,
     div, img, prelude::*, px, rgb, size
 };
 use queenfish::board::Board as QueenFishBoard;
@@ -27,15 +26,47 @@ const BLACK_ROOK: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bR.s
 const BLACK_QUEEN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bQ.svg";
 const BLACK_KING: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bK.svg";
 
+pub struct SharedState {
+    fen_string: Option<SharedString>
+}
+impl Global for SharedState {}
+
+
+
 
 struct FenWindow {
-    input_controller: Entity<InputController>
+    input_controller: Entity<InputController>,
+    focus_handle: gpui::FocusHandle
+}
+impl Focusable for FenWindow {
+    fn focus_handle(&self, _cx: &App) -> gpui::FocusHandle {
+        self.focus_handle.clone()
+    }
 }
 
 impl Render for FenWindow {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+
+        let input_controller = self.input_controller.clone().read(cx);
+        let input_field = input_controller.text_input.clone().read(cx);
+        let content = input_field.content.as_str().to_string();
+
+
         div()
+            .bg(rgb(gui::colors::BACKGROUND))
+            .text_color(rgb(gui::colors::TEXT))
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .py_8()
+            .child(format!("Enter FEN:"))
             .child(self.input_controller.clone())
+            .child(button("Load", move |_, cx| {
+                println!("Dispatching");
+                cx.global_mut::<SharedState>().fen_string = Some(SharedString::from(content.clone()));
+            }))
     }
 }
 
@@ -154,11 +185,22 @@ impl Board {
         self.analysis.clear();
         self.is_analyzing = false;
         cx.notify();
+    } //
+
+    pub fn load_from_fen(&mut self, fen: String) {
+        self.board.load_from_fen(fen.as_str());
     }
 }
 
 impl Render for Board {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(fen) = cx.global::<SharedState>().fen_string.clone() {
+            println!("FEN: {}", fen);
+            self.load_from_fen(fen.to_string());
+            cx.global_mut::<SharedState>().fen_string = None;
+            cx.notify();
+        }
+
         self.poll_engine(cx);
 
         let squares = (0..64)
@@ -311,7 +353,7 @@ impl Render for Board {
                             ),
                     )
                     .child(button("Omar", move |_, cx| {
-                        let bounds = Bounds::centered(None, size(px(500.), px(100.)), cx);
+                        let bounds = Bounds::centered(None, size(px(500.), px(150.)), cx);
                         let options = WindowOptions {
                             window_bounds: Some(WindowBounds::Windowed(bounds)),
                             ..Default::default()
@@ -326,8 +368,9 @@ impl Render for Board {
 
                         let window = cx
                             .open_window(options, |_, cx| {
-                                cx.new(|_cx| FenWindow {
-                                    input_controller
+                                cx.new(|cx| FenWindow {
+                                    input_controller,
+                                    focus_handle: cx.focus_handle(),
                                 })
                             })
                             .unwrap();
@@ -410,6 +453,8 @@ fn main() {
 
     Application::new().run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(500.), px(500.0)), cx);
+
+        cx.set_global(SharedState {fen_string: None});
 
         cx.bind_keys([
             KeyBinding::new("backspace", Backspace, None),

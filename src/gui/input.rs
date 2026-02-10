@@ -608,16 +608,18 @@ impl InputField {
             .on_mouse_up(MouseButton::Left, cx.listener(InputField::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(InputField::on_mouse_up))
             .on_mouse_move(cx.listener(InputField::on_mouse_move))
-            .line_height(px(30.))
-            .text_size(px(24.))
+            .line_height(px(20.))
+            .text_size(px(14.))
+            .text_color(gpui::black())
             .child(
                 div()
-                    .h(px(30. + 4. * 2.))
+                    .h(px(20. + 4. * 2.))
                     .w_4_5()
-                    .rounded_2xl()
+                    .rounded_lg()
                     .my_2()
                     .mx_auto()
-                    .p(px(4.))
+                    .py(px(4.))
+                    .px_2()
                     .bg(gpui::white())
                     .child(TextElement { input: cx.entity() }),
             )
@@ -631,7 +633,7 @@ pub struct InputController {
 }
 impl Render for InputController {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().child(self.text_input.clone())
+        div().child(self.text_input.clone()).size_full()
     }
 }
 
