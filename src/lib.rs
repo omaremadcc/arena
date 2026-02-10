@@ -1,7 +1,7 @@
 pub mod engine;
 pub mod game;
 pub mod tournament;
-pub mod gpui;
+pub mod gui;
 
 pub use engine::*;
 pub use game::*;

@@ -1,10 +1,12 @@
-use arena::gpui::input::{
+use arena::gui::input::{
     Backspace, Copy, Cut, Delete, End, Home, InputController, InputField, Left, Paste, Right,
     SelectAll, SelectLeft, SelectRight, ShowCharacterPalette,
 };
-use arena::{Engine, EngineHandle};
+use arena::{Engine, EngineHandle, gui};
 use gpui::{
-    App, Application, Bounds, Context, Entity, Focusable, KeyBinding, Rgba, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px, rgb, size
+    App, Application, Bounds, Context, Entity, Focusable,
+    KeyBinding, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions,
+    div, img, prelude::*, px, rgb, size
 };
 use queenfish::board::Board as QueenFishBoard;
 use queenfish::board::bishop_magic::init_bishop_magics;
@@ -25,12 +27,6 @@ const BLACK_ROOK: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bR.s
 const BLACK_QUEEN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bQ.svg";
 const BLACK_KING: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bK.svg";
 
-fn light_board_color() -> Rgba {
-    rgb(0xf0d9b5)
-}
-fn dark_board_color() -> Rgba {
-    rgb(0xb58863)
-}
 
 struct FenWindow {
     input_controller: Entity<InputController>
@@ -176,9 +172,9 @@ impl Render for Board {
                 let rank = i / 8;
 
                 let color = if (file + rank) % 2 == 0 {
-                    light_board_color()
+                    gui::colors::BOARD_LIGHT
                 } else {
-                    dark_board_color()
+                    gui::colors::BOARD_DARK
                 };
                 let mut piece_image = "";
                 if let Some(piece) = self.board.piece_at[i] {
@@ -201,7 +197,7 @@ impl Render for Board {
 
                 let mut element = div()
                     .size_full()
-                    .bg(color)
+                    .bg(rgb(color))
                     .p_0p5()
                     .flex()
                     .items_center()
@@ -265,7 +261,7 @@ impl Render for Board {
             .collect::<Vec<_>>();
 
         div()
-            .bg(rgb(0x161512))
+            .bg(rgb(gui::colors::BACKGROUND))
             .size_full()
             .p_3()
             .pt_0()
@@ -392,7 +388,7 @@ impl Render for Board {
                     .overflow_y_scroll()
                     .w_full()
                     .h_1_3()
-                    .bg(rgb(0x262421))
+                    .bg(rgb(gui::colors::SECONDARY_BACKGROUND))
                     .rounded_md()
                     .p_1()
                     .gap_neg_112()
