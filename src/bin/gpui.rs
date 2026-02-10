@@ -11,20 +11,10 @@ use queenfish::board::Board as QueenFishBoard;
 use queenfish::board::bishop_magic::init_bishop_magics;
 use queenfish::board::rook_magic::init_rook_magics;
 use std::{collections::HashSet, path::Path};
-
-const WHITE_PAWN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wP.svg";
-const WHITE_KNIGHT: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wN.svg";
-const WHITE_BISHOP: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wB.svg";
-const WHITE_ROOK: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wR.svg";
-const WHITE_QUEEN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wQ.svg";
-const WHITE_KING: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\wK.svg";
-
-const BLACK_PAWN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bP.svg";
-const BLACK_KNIGHT: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bN.svg";
-const BLACK_BISHOP: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bB.svg";
-const BLACK_ROOK: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bR.svg";
-const BLACK_QUEEN: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bQ.svg";
-const BLACK_KING: &str = "C:\\Learn\\LearnRust\\Chess Arena\\arena\\pieces\\bK.svg";
+use arena::gui::constants::{BLACK_BISHOP, BLACK_KING, BLACK_KNIGHT, BLACK_PAWN,
+    BLACK_QUEEN, BLACK_ROOK, WHITE_BISHOP, WHITE_KING, WHITE_KNIGHT, WHITE_PAWN,
+    WHITE_QUEEN, WHITE_ROOK};
+// use arena::gui::constants::{BLACK_BISHOP, BLACK_KING, BLACK_KNIGHT};
 
 pub struct SharedState {
     fen_string: Option<SharedString>
