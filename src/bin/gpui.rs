@@ -65,6 +65,7 @@ struct Board {
     analysis: Vec<String>,
     engine_handle: Option<EngineHandle>,
     is_analyzing: bool,
+    selected_square: Option<u8>
 }
 
 impl Focusable for Board {
@@ -82,6 +83,7 @@ impl Board {
             .map(|mv| mv.1)
             .collect::<Vec<_>>();
         if available_squares.contains(&square) {
+            self.selected_square = None;
             self.engine_handle.as_mut().unwrap().send_command("stop\n");
             self.analysis.clear();
 
@@ -106,6 +108,7 @@ impl Board {
                 .into_iter()
                 .collect();
             self.available_moves = avail_squares;
+            self.selected_square = Some(square);
         }
     } //
 
@@ -145,6 +148,7 @@ impl Board {
             analysis: Vec::new(),
             engine_handle: Some(engine_handle),
             is_analyzing: false,
+            selected_square: None,
         };
 
         return element;
@@ -195,11 +199,18 @@ impl Render for Board {
                 let file = i % 8;
                 let rank = i / 8;
 
-                let color = if (file + rank) % 2 == 0 {
+                let mut color = if (file + rank) % 2 == 0 {
                     gui::colors::BOARD_LIGHT
                 } else {
                     gui::colors::BOARD_DARK
                 };
+
+                if let Some(selected_square) = self.selected_square {
+                    if selected_square == i as u8 {
+                        color = gui::colors::SQUARE_SELECTION;
+                    }
+                }
+
                 let mut piece_image = "";
                 if let Some(piece) = self.board.piece_at[i] {
                     piece_image = match piece as usize {
@@ -264,7 +275,7 @@ impl Render for Board {
                                 .justify_center()
                                 .child(
                                     div()
-                                        .bg(rgb(0xaeb187))
+                                        .bg(rgb(gui::colors::SQUARE_SELECTION))
                                         .rounded_full()
                                         .w_1_3() // Adjust size as needed
                                         .h_1_3(),
@@ -344,7 +355,7 @@ impl Render for Board {
                             .detach();
                         },
                     ))),
-            )
+            ) //
             .child(
                 div()
                     .size_full()
@@ -361,7 +372,10 @@ impl Render for Board {
                             .grid()
                             .grid_cols(8)
                             .grid_rows(8)
-                            .children(squares),
+                            .children(squares)
+                            .on_mouse_down_out(cx.listener(|board, _, _, cx| {
+                                board.selected_square = None;
+                            }))
                     ) //
                     .child(
                         div()
@@ -397,7 +411,7 @@ impl Render for Board {
                                 div().child(x.clone().replace("\n", "")).text_color(gpui::white()).text_sm()
                             })),
                     ), //
-            )
+            ) //
     }
 }
 
