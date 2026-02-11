@@ -8,13 +8,14 @@ use arena::gui::input::{
 };
 use arena::{Engine, EngineHandle, gui};
 use gpui::{
-    App, Application, Bounds, Context, Entity, EntityId, Focusable, FontWeight, Global, KeyBinding, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px, rgb, size
+    App, Application, Bounds, Context, Entity, EntityId, Focusable, FontWeight, Global, KeyBinding,
+    SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px,
+    rgb, size,
 };
 use queenfish::board::Board as QueenFishBoard;
 use queenfish::board::bishop_magic::init_bishop_magics;
 use queenfish::board::rook_magic::init_rook_magics;
 use std::{collections::HashSet, path::Path};
-// use arena::gui::constants::{BLACK_BISHOP, BLACK_KING, BLACK_KNIGHT};
 
 pub struct SharedState {
     fen_string: Option<SharedString>,
@@ -66,7 +67,7 @@ struct Board {
     analysis: Vec<String>,
     engine_handle: Option<EngineHandle>,
     is_analyzing: bool,
-    selected_square: Option<u8>
+    selected_square: Option<u8>,
 }
 
 impl Focusable for Board {
@@ -236,15 +237,13 @@ impl Render for Board {
                 }
 
                 let mut element = div()
-                    .size_full()
-                    .bg(rgb(color))
-                    .p_0p5()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .w(px(40.)) // Adjust size as needed
-                    .h(px(40.))
-                    .child(img(Path::new(piece_image)).size_full());
+                        .size_full()
+                        .bg(rgb(color))
+                        .p_0p5()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(img(Path::new(piece_image)).size_full());
 
                 if self
                     .available_moves
@@ -299,6 +298,12 @@ impl Render for Board {
                 return element;
             })
             .collect::<Vec<_>>();
+
+        let window_bounds = _window.window_bounds().get_bounds().size;
+        let window_width = window_bounds.width;
+        let window_height = window_bounds.height;
+        let board_size = window_width.min(window_height) * 0.5;
+
 
         div()
             .id("board")
@@ -375,16 +380,22 @@ impl Render for Board {
                     .gap_2()
                     .child(
                         div()
-                            .w(px(8. * 40.))
-                            .h(px(8. * 40.))
-                            .grid()
-                            .grid_cols(8)
-                            .grid_rows(8)
-                            .children(squares)
-                            .on_mouse_down_out(cx.listener(|board, _, _, cx| {
-                                board.selected_square = None;
-                                cx.notify();
-                            }))
+                            .flex()
+                            .child(
+                                div()
+                                    .w(board_size)
+                                    .h(board_size)
+                                    .grid()
+                                    .grid_cols(8)
+                                    .grid_rows(8)
+                                    .gap(px(-1.))
+                                    .children(squares)
+                                    .on_mouse_down_out(cx.listener(|board, _, _, cx| {
+                                        board.selected_square = None;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(div().bg(gpui::green()).min_w_1_3())
                     ) //
                     .child(
                         div()
@@ -417,7 +428,10 @@ impl Render for Board {
                             .child(format!("analysis"))
                             .text_color(gpui::white())
                             .children(self.analysis.iter().rev().map(|x| {
-                                div().child(x.clone().replace("\n", "")).text_color(gpui::white()).text_sm()
+                                div()
+                                    .child(x.clone().replace("\n", ""))
+                                    .text_color(gpui::white())
+                                    .text_sm()
                             })),
                     ), //
             ) //
