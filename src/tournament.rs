@@ -61,31 +61,31 @@ impl Tournament {
         }
     } //
 
-    pub fn start(&mut self) -> TournamentResult {
-        let mut tournament_result = TournamentResult::default();
-        tournament_result.engine1 = self.engine1.name.clone();
-        tournament_result.engine2 = self.engine2.name.clone();
-        for i in 0..self.rounds {
-            let engine1 = Engine::new(&self.engine1.path, &self.engine1.name);
-            let engine2 = Engine::new(&self.engine2.path, &self.engine2.name);
-            let mut game;
-            if i % 2 == 0 {
-                game = Game::new(engine1, engine2, self.time_control);
-            } else {
-                game = Game::new(engine2, engine1, self.time_control);
-            }
-            let game_result = game.play();
-            tournament_result.games_list.push(game_result.clone());
-            tournament_result.total_games += 1;
+    // pub fn start(&mut self) -> TournamentResult {
+    //     let mut tournament_result = TournamentResult::default();
+    //     tournament_result.engine1 = self.engine1.name.clone();
+    //     tournament_result.engine2 = self.engine2.name.clone();
+    //     for i in 0..self.rounds {
+    //         let engine1 = Engine::new(&self.engine1.path, &self.engine1.name);
+    //         let engine2 = Engine::new(&self.engine2.path, &self.engine2.name);
+    //         let mut game;
+    //         if i % 2 == 0 {
+    //             game = Game::new(engine1, engine2, self.time_control);
+    //         } else {
+    //             game = Game::new(engine2, engine1, self.time_control);
+    //         }
+    //         let game_result = game.play();
+    //         tournament_result.games_list.push(game_result.clone());
+    //         tournament_result.total_games += 1;
 
-            if game_result.winner() == self.engine1.name {
-                tournament_result.engine1_won += 1;
-            } else if game_result.winner() == self.engine2.name {
-                tournament_result.engine2_won += 1;
-            } else {
-                tournament_result.draws += 1;
-            }
-        }
-        tournament_result
-    } //
+    //         if game_result.winner() == self.engine1.name {
+    //             tournament_result.engine1_won += 1;
+    //         } else if game_result.winner() == self.engine2.name {
+    //             tournament_result.engine2_won += 1;
+    //         } else {
+    //             tournament_result.draws += 1;
+    //         }
+    //     }
+    //     tournament_result
+    // } //
 }
