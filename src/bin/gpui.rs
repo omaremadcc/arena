@@ -20,10 +20,10 @@ use std::{collections::HashSet, path::Path};
 enum AnalysisLine {
     Move(String),
     Depth {
-        depth: i32,
+        depth: Option<i32>,
         selective_depth: Option<i32>,
         score: Option<i32>,
-        best_move: String,
+        best_move: Option<String>,
         nodes: Option<i32>,
         time: Option<i32>,
     }
@@ -73,7 +73,7 @@ impl AnalysisLine {
                 }
             }
 
-            return Some(AnalysisLine::Depth { depth: depth.unwrap_or(0), selective_depth: None, score, best_move: best_move.unwrap_or("None".to_string()), nodes, time });
+            return Some(AnalysisLine::Depth { depth: depth, selective_depth: None, score, best_move: best_move, nodes, time });
         }
         None
     }
@@ -509,12 +509,25 @@ impl Render for Board {
                                             .flex_row()
                                             .gap_2()
                                             .items_center()
-                                            .child(format!("Best Move Ma Nigga: {}", m))
+                                            .child(format!("Best Move: {}", m))
                                             .text_color(gpui::white())
                                     },
-                                    AnalysisLine::Depth { depth, score , ..} => {
+                                    AnalysisLine::Depth { depth, score , best_move, nodes, ..} => {
+                                        let mut line = String::new();
+                                        if depth.is_some() {
+                                            line = format!("Depth: {}", depth.unwrap());
+                                        }
+                                        if score.is_some() {
+                                            line = format!("{} Score: {}", line, score.unwrap());
+                                        }
+                                        if best_move.is_some() {
+                                            line = format!("{} Best Move: {}", line, best_move.clone().unwrap());
+                                        }
+                                        if nodes.is_some() {
+                                            line = format!("{} Nodes: {}", line, nodes.unwrap());
+                                        }
                                         return div()
-                                            .child(format!("Depth: {}, Score: {}", depth, score.unwrap_or(0)))
+                                            .child(line);
                                     }
                                 }
                                 // div()
