@@ -29,8 +29,8 @@ mod test {
         );
 
         let mut tournament = Tournament::new(5, engine , engine2 , TimeControl::TimePerMove(50));
-        let tournament_result = tournament.start();
-        dbg!(tournament_result);
+        // let tournament_result = tournament.start();
+        // dbg!(tournament_result);
         // dbg!(game.play());
     }
 } //

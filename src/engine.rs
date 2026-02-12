@@ -5,6 +5,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 
+#[derive(Clone)]
 enum EngineOption {
     CHECK {
         name: String,
@@ -18,6 +19,7 @@ enum EngineOption {
     },
 } //
 
+#[derive(Clone)]
 pub struct Engine {
     pub path: String,
     pub name: String,
@@ -139,12 +141,14 @@ impl Engine {
             process: child_process,
             tx: cmd_tx,
             rx: evt_rx,
+            engine: self.clone(),
         }
     } //
 }
 
 
 pub struct EngineHandle {
+    pub engine: Engine,
     process: Child,
     pub tx: Sender<String>,
     pub rx: Receiver<String>,
