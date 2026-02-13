@@ -8,7 +8,7 @@ use arena::gui::input::{
 };
 use arena::{Engine, EngineHandle, gui};
 use gpui::{
-    App, Application, Bounds, Context, Entity, EntityId, Focusable, FontWeight, Global, KeyBinding,
+    App, Application, Bounds, Context, Entity, Focusable, FontWeight, Global, KeyBinding,
     SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px,
     rgb, size,
 };
@@ -94,7 +94,6 @@ impl Global for SharedState {}
 struct FenWindow {
     input_controller: Entity<InputController>,
     focus_handle: gpui::FocusHandle,
-    board_entity_id: EntityId,
 }
 impl Focusable for FenWindow {
     fn focus_handle(&self, _cx: &App) -> gpui::FocusHandle {
@@ -104,16 +103,9 @@ impl Focusable for FenWindow {
 
 impl Render for FenWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let input_controller = self.input_controller.clone().read(cx);
-        let input_field = input_controller.text_input.clone().read(cx);
-        let content = input_field.content.as_str().to_string();
-        let board_entity_id = self.board_entity_id.clone();
-
         div()
             .bg(rgb(gui::colors::BACKGROUND))
             .text_color(rgb(gui::colors::TEXT))
-            .size_full()
-            .flex()
             .flex_col()
             .items_center()
             .justify_center()
@@ -122,7 +114,6 @@ impl Render for FenWindow {
             .child(self.input_controller.clone())
             .child(
                 button("Load").on_any_mouse_down(cx.listener(|this, _, _, cx| {
-                    println!("Dispatching");
                     let input_controller = this.input_controller.clone().read(cx);
                     let input_field = input_controller.text_input.clone().read(cx);
                     let content = input_field.content.as_str().to_string();
@@ -194,14 +185,10 @@ impl Board {
 
     pub fn analyze(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.engine_handle.as_mut() else {
-            println!("engine handle missing");
             return;
         };
 
-        println!("Analyzing");
-
         if self.is_analyzing {
-            println!("Stopping analysis");
             handle.send_command("stop\n");
             self.analysis.clear();
             self.is_analyzing = false;
@@ -209,7 +196,6 @@ impl Board {
             handle.send_command("stop\n");
             self.analysis.clear();
             self.is_analyzing = true;
-            dbg!(self.board.to_fen());
             let command = format!("position fen {} 0 1\n", self.board.to_fen());
             handle.send_command(&command);
             handle.send_command("go\n");
@@ -244,12 +230,10 @@ impl Board {
     pub fn poll_engine(&mut self, cx: &mut Context<Self>) {
         if let Some(handle) = self.engine_handle.as_mut() {
             while let Some(line) = handle.try_read_line() {
-                println!("polling engine");
                 if let Some(analysis) = AnalysisLine::new(line) {
                     self.analysis.push(analysis);
                     cx.notify();
                 }
-                // self.analysis.push(line);
             }
         }
     } //
@@ -280,7 +264,6 @@ impl Board {
 impl Render for Board {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(fen) = cx.global::<SharedState>().fen_string.clone() {
-            println!("FEN: {}", fen);
             self.load_from_fen(fen.to_string());
             cx.global_mut::<SharedState>().fen_string = None;
             cx.notify();
@@ -429,14 +412,12 @@ impl Render for Board {
                                 focus_handle: cx.focus_handle(),
                                 text_input,
                             });
-                            let entity_id = cx.entity_id();
 
                             let window = cx
                                 .open_window(options, |_, cx| {
                                     cx.new(|cx| FenWindow {
                                         input_controller,
                                         focus_handle: cx.focus_handle(),
-                                        board_entity_id: entity_id,
                                     })
                                 })
                                 .unwrap();
@@ -526,7 +507,11 @@ impl Render for Board {
                                 self.engine_handle.as_ref().unwrap().engine.name
                             )))
                             .child(seperator(gui::colors::MUTED))
-                            .child(div().px_4().children(self.analysis.iter().rev().map(|x| {
+                            .child(
+                                div()
+                                .px_4()
+                                .when(!self.is_analyzing, |this| this.hidden())
+                                .children(self.analysis.iter().rev().map(|x: &AnalysisLine| {
                                 match x {
                                     AnalysisLine::Move(m) => {
                                         let mv = m.clone();
@@ -551,7 +536,7 @@ impl Render for Board {
                                     AnalysisLine::Depth {
                                         depth,
                                         score,
-                                        best_move,
+                                        best_move: _best_move,
                                         nodes,
                                         selective_depth,
                                         time,
