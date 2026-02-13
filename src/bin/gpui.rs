@@ -145,7 +145,6 @@ impl Focusable for Board {
 }
 
 impl Board {
-
     pub fn select_square(&mut self, square: u8) {
         let moves = self.board.generate_moves();
         let available_squares = self
@@ -209,8 +208,7 @@ impl Board {
     } //
 
     pub fn new(focus_handle: gpui::FocusHandle) -> Self {
-        let mut board = QueenFishBoard::new();
-        board.load_from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+        let board = QueenFishBoard::new();
 
         let engine = Engine::new(
             "C:\\Learn\\LearnRust\\chess\\target\\release\\uci.exe",
@@ -263,6 +261,12 @@ impl Board {
     } //
 
     pub fn play_move(&mut self, mv: String) {
+        if self.current_move_index != self.make_move_history.len() {
+            println!("Truncating move history");
+            self.make_move_history.truncate(self.current_move_index);
+            self.unmake_move_history.truncate(self.current_move_index);
+        }
+
         self.is_analyzing = false;
         self.analysis.clear();
         self.engine_handle.as_mut().unwrap().send_command("stop\n");
@@ -271,7 +275,8 @@ impl Board {
         self.make_move_history.push(mv);
         self.unmake_move_history.push(unmakemove);
         self.current_move_index += 1;
-    }
+    } //
+
     pub fn move_forward(&mut self) {
         println!("move forward {}", self.current_move_index);
         println!("{:?}", self.make_move_history.iter().map(|mv| mv.to_uci()).collect::<Vec<String>>());
@@ -284,7 +289,8 @@ impl Board {
         let mv = self.make_move_history[self.current_move_index];
         self.board.make_move(mv);
         self.current_move_index += 1;
-    }
+    } //
+
     pub fn undo_move(&mut self) {
         println!("undo move {}", self.current_move_index);
         if self.current_move_index <= 0 {
@@ -297,7 +303,7 @@ impl Board {
         let unmake = self.unmake_move_history[current_move_index];
         self.board.unmake_move(unmake);
         self.current_move_index -= 1;
-    }
+    } //
 }
 
 impl Render for Board {
@@ -542,10 +548,10 @@ impl Render for Board {
                                 .gap_2()
                                 .items_center()
                                 .justify_between()
-                                .p(px(0.5))
+                                .p(px(8.))
                                 .child(
                                     img(Path::new(
-                                        "C:/Learn/LearnRust/Chess Arena/arena/svg/brain.svg",
+                                        "C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-left.svg",
                                     ))
                                     .size_full(),
                                 )
@@ -565,10 +571,10 @@ impl Render for Board {
                                 .gap_2()
                                 .items_center()
                                 .justify_between()
-                                .p(px(0.5))
+                                .p(px(8.))
                                 .child(
                                     img(Path::new(
-                                        "C:/Learn/LearnRust/Chess Arena/arena/svg/brain.svg",
+                                        "C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-right.svg",
                                     ))
                                     .size_full(),
                                 )
