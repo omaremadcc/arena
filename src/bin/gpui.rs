@@ -279,7 +279,13 @@ impl Board {
 
     pub fn move_forward(&mut self) {
         println!("move forward {}", self.current_move_index);
-        println!("{:?}", self.make_move_history.iter().map(|mv| mv.to_uci()).collect::<Vec<String>>());
+        println!(
+            "{:?}",
+            self.make_move_history
+                .iter()
+                .map(|mv| mv.to_uci())
+                .collect::<Vec<String>>()
+        );
         if self.current_move_index as i32 > (self.make_move_history.len() as i32) - 1 {
             return;
         }
@@ -517,70 +523,19 @@ impl Render for Board {
                         .flex()
                         .gap_2()
                         .child(
-                            div()
-                                .size(px(30.))
-                                .rounded_sm()
-                                .bg(rgb(gui::colors::TEXT))
-                                .flex()
-                                .gap_2()
-                                .items_center()
-                                .justify_between()
-                                .p(px(0.5))
-                                .child(
-                                    img(Path::new(
-                                        "C:/Learn/LearnRust/Chess Arena/arena/svg/brain.svg",
-                                    ))
-                                    .size_full(),
-                                )
-                                .hover(|this| this.bg(gpui::white()))
-                                .cursor_pointer()
-                                .text_color(gpui::black())
+                            logo_button("C:/Learn/LearnRust/Chess Arena/arena/svg/brain.svg" , 0.)
                                 .on_any_mouse_down(cx.listener(move |board, _event, _window, cx| {
                                     board.analyze(cx);
                                 }))
                         )
                         .child(
-                            div()
-                                .size(px(30.))
-                                .rounded_sm()
-                                .bg(rgb(gui::colors::TEXT))
-                                .flex()
-                                .gap_2()
-                                .items_center()
-                                .justify_between()
-                                .p(px(8.))
-                                .child(
-                                    img(Path::new(
-                                        "C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-left.svg",
-                                    ))
-                                    .size_full(),
-                                )
-                                .hover(|this| this.bg(gpui::white()))
-                                .cursor_pointer()
-                                .text_color(gpui::black())
+                            logo_button("C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-left.svg" , 8.)
                                 .on_any_mouse_down(cx.listener(move |board, _event, _window, cx| {
                                     board.undo_move();
                                 }))
                         )
                         .child(
-                            div()
-                                .size(px(30.))
-                                .rounded_sm()
-                                .bg(rgb(gui::colors::TEXT))
-                                .flex()
-                                .gap_2()
-                                .items_center()
-                                .justify_between()
-                                .p(px(8.))
-                                .child(
-                                    img(Path::new(
-                                        "C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-right.svg",
-                                    ))
-                                    .size_full(),
-                                )
-                                .hover(|this| this.bg(gpui::white()))
-                                .cursor_pointer()
-                                .text_color(gpui::black())
+                            logo_button("C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-right.svg" , 8.)
                                 .on_any_mouse_down(cx.listener(move |board, _event, _window, cx| {
                                     board.move_forward();
                                 }))
@@ -733,7 +688,7 @@ fn button(text: &str) -> impl IntoElement + InteractiveElement {
         .rounded_sm()
         .cursor_pointer()
         .child(text.to_string())
-}
+} //
 
 fn menu_button(text: &str) -> impl IntoElement + InteractiveElement {
     div()
@@ -748,8 +703,29 @@ fn menu_button(text: &str) -> impl IntoElement + InteractiveElement {
         .text_color(rgb(gui::colors::BACKGROUND))
         .cursor_pointer()
         .child(text.to_string())
-}
+} //
 
 fn seperator(color: u32) -> impl IntoElement + InteractiveElement {
     div().w_full().h(px(1.)).bg(rgb(color))
+} //
+
+fn logo_button(path: &str, padding: f32) -> impl IntoElement + InteractiveElement {
+    div()
+        .size(px(30.))
+        .rounded_sm()
+        .bg(rgb(gui::colors::TEXT))
+        .flex()
+        .gap_2()
+        .items_center()
+        .justify_between()
+        .p(px(padding))
+        .child(
+            img(Path::new(
+                path,
+            ))
+            .size_full(),
+        )
+        .hover(|this| this.bg(gpui::white()))
+        .cursor_pointer()
+        .text_color(gpui::black())
 }
