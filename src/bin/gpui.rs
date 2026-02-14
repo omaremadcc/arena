@@ -6,7 +6,7 @@ use arena::gui::input::{
     Backspace, Copy, Cut, Delete, End, Home, InputController, InputField, Left, Paste, Right,
     SelectAll, SelectLeft, SelectRight, ShowCharacterPalette,
 };
-use arena::{Engine, EngineHandle, gui};
+use arena::{Engine, EngineHandle, EngineOption, gui};
 use gpui::{
     App, Application, Bounds, Context, Entity, Focusable, FontWeight, Global, KeyBinding,
     SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px,
@@ -16,6 +16,7 @@ use queenfish::board::Move;
 use queenfish::board::bishop_magic::init_bishop_magics;
 use queenfish::board::rook_magic::init_rook_magics;
 use queenfish::board::{Board as QueenFishBoard, UnMakeMove};
+use std::sync::mpsc::Sender;
 use std::{collections::HashSet, path::Path};
 
 enum AnalysisLine {
@@ -90,6 +91,76 @@ pub struct SharedState {
     fen_string: Option<SharedString>,
 }
 impl Global for SharedState {}
+
+struct EngineOptionsWindow {
+    engine_tx: Sender<String>,
+    focus_handle: gpui::FocusHandle,
+    options: Vec<EngineOption>,
+}
+
+impl Render for EngineOptionsWindow {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+
+        let options = self.options.iter().map(|option| match option {
+            EngineOption::CHECK { name, value } => {
+                let value = *value;
+                let name = name.clone();
+            div()
+                .flex()
+                .gap_2()
+                .items_center()
+                .child(name.clone())
+                .child(
+                    check_box(value)
+                        .on_any_mouse_down(cx.listener(move |engine_options_window, _, _, cx| {
+                            let engine_tx = engine_options_window.engine_tx.clone();
+                            if let Some(option) = engine_options_window.options.iter_mut().find(|o| match o {EngineOption::CHECK { name: name_inner, .. } => *name_inner == name, _ => false}) {
+                                if let EngineOption::CHECK { value, .. } = option {
+                                    *value = !*value;
+                                }
+                            }
+                            let _ = engine_tx.send(format!("setoption name {} value {}\n", name.clone(), !(value)));
+                            cx.notify();
+                        })),
+                )
+            },
+            EngineOption::SPIN {
+                name,
+                value,
+                min,
+                max,
+            } => div().child(format!(
+                "{}: {} ({}/{})",
+                name,
+                value,
+                min.unwrap_or(0),
+                max.unwrap_or(0)
+            )),
+        });
+        div()
+            .id("engine_options_window")
+            .overflow_y_scroll()
+            .size_full()
+            .bg(rgb(gui::colors::BACKGROUND))
+            .text_color(gpui::white())
+            .text_2xl()
+            .font_weight(FontWeight::BOLD)
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .py_8()
+            .px_6()
+            .child(format!("Engine Options:"))
+            .child(
+                div()
+                    .px_2()
+                    .text_base()
+                    .font_weight(FontWeight::NORMAL)
+                    .text_color(rgb(gui::colors::TEXT))
+                    .children(options),
+            )
+    }
+}
 
 struct FenWindow {
     input_controller: Entity<InputController>,
@@ -449,8 +520,8 @@ impl Render for Board {
                             cx.notify();
                         },
                     )))
-                    .child(menu_button("Load FEN").on_any_mouse_down(cx.listener(
-                        |_, _, _, cx| {
+                    .child(
+                        menu_button("Load FEN").on_any_mouse_down(cx.listener(|_, _, _, cx| {
                             let bounds = Bounds::centered(None, size(px(500.), px(150.)), cx);
                             let options = WindowOptions {
                                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -490,6 +561,28 @@ impl Render for Board {
                                 }
                             })
                             .detach();
+                        })),
+                    )
+                    .child(menu_button("Engine Options").on_any_mouse_down(cx.listener(
+                        |board, _, _, cx| {
+                            let bounds = Bounds::centered(None, size(px(300.), px(400.)), cx);
+                            let options = WindowOptions {
+                                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                                ..Default::default()
+                            };
+                            let engine_handle = board.engine_handle.as_mut().unwrap();
+                            let engine_options = engine_handle.detect_engine_options().clone();
+
+                            let window = cx
+                                .open_window(options, |_, cx| {
+                                    cx.new(|cx| EngineOptionsWindow {
+                                        engine_tx: engine_handle.tx.clone(),
+                                        options: engine_options,
+                                        focus_handle: cx.focus_handle(),
+                                    })
+                                })
+                                .unwrap();
+                            window.update(cx, |_, _, cx| cx.entity()).unwrap();
                         },
                     ))),
             ) //
@@ -520,26 +613,41 @@ impl Render for Board {
                     ) //
                     .child(
                         div()
-                        .flex()
-                        .gap_2()
-                        .child(
-                            logo_button("C:/Learn/LearnRust/Chess Arena/arena/svg/brain.svg" , 0.)
-                                .on_any_mouse_down(cx.listener(move |board, _event, _window, cx| {
-                                    board.analyze(cx);
-                                }))
-                        )
-                        .child(
-                            logo_button("C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-left.svg" , 8.)
-                                .on_any_mouse_down(cx.listener(move |board, _event, _window, cx| {
-                                    board.undo_move();
-                                }))
-                        )
-                        .child(
-                            logo_button("C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-right.svg" , 8.)
-                                .on_any_mouse_down(cx.listener(move |board, _event, _window, cx| {
-                                    board.move_forward();
-                                }))
-                        )
+                            .flex()
+                            .gap_2()
+                            .child(
+                                logo_button(
+                                    "C:/Learn/LearnRust/Chess Arena/arena/svg/brain.svg",
+                                    0.,
+                                )
+                                .on_any_mouse_down(cx.listener(
+                                    move |board, _event, _window, cx| {
+                                        board.analyze(cx);
+                                    },
+                                )),
+                            )
+                            .child(
+                                logo_button(
+                                    "C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-left.svg",
+                                    8.,
+                                )
+                                .on_any_mouse_down(cx.listener(
+                                    move |board, _event, _window, cx| {
+                                        board.undo_move();
+                                    },
+                                )),
+                            )
+                            .child(
+                                logo_button(
+                                    "C:/Learn/LearnRust/Chess Arena/arena/svg/chevron-right.svg",
+                                    8.,
+                                )
+                                .on_any_mouse_down(cx.listener(
+                                    move |board, _event, _window, cx| {
+                                        board.move_forward();
+                                    },
+                                )),
+                            ),
                     ) //
                     .child(
                         div()
@@ -719,13 +827,22 @@ fn logo_button(path: &str, padding: f32) -> impl IntoElement + InteractiveElemen
         .items_center()
         .justify_between()
         .p(px(padding))
-        .child(
-            img(Path::new(
-                path,
-            ))
-            .size_full(),
-        )
+        .child(img(Path::new(path)).size_full())
         .hover(|this| this.bg(gpui::white()))
         .cursor_pointer()
         .text_color(gpui::black())
-}
+} //
+
+fn check_box(state: bool) -> impl IntoElement + InteractiveElement {
+    div()
+        .w(px(12.))
+        .h(px(12.))
+        .flex_none()
+        .bg(rgb(0xf7f7f7))
+        .text_color(gpui::black())
+        .border_1()
+        .border_color(rgb(0xe0e0e0))
+        .rounded_sm()
+        .cursor_pointer()
+        .when(state, |this| this.bg(rgb(0x3b82f6)))
+} //

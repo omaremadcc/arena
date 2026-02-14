@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 
 #[derive(Clone)]
-enum EngineOption {
+pub enum EngineOption {
     CHECK {
         name: String,
         value: bool,
@@ -171,12 +171,11 @@ impl EngineHandle {
         self.rx.try_recv().ok()
     }
 
-    pub fn detect_engine_options(&mut self) {
+    pub fn detect_engine_options(&mut self) -> Vec<EngineOption> {
         self.send_command("uci\n");
         let mut options = vec![];
         loop {
             if let Some(str) = self.read_line() {
-                println!("line: {}", str);
                 if str.starts_with("option") {
                     let args = str.split_whitespace().collect::<Vec<_>>();
                     let option_type;
@@ -231,7 +230,7 @@ impl EngineHandle {
                 break;
             }
         }
-        options;
+        options
     } //
 
     pub fn disconnect(&mut self) {
