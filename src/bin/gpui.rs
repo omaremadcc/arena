@@ -6,11 +6,9 @@ use arena::gui::input::{
     Backspace, Copy, Cut, Delete, End, Home, InputController, InputField, Left, Paste, Right,
     SelectAll, SelectLeft, SelectRight, ShowCharacterPalette,
 };
-use arena::{Engine, EngineHandle, EngineOption, gui};
+use arena::{Engine, EngineOption, gui, AnalysisLine};
 use gpui::{
-    App, Application, Bounds, Context, Entity, Focusable, FontWeight, Global, KeyBinding,
-    SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px,
-    rgb, size,
+    App, Application, Bounds, Context, ElementId, Entity, Focusable, FontWeight, Global, KeyBinding, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, div, img, prelude::*, px, rgb, size
 };
 use queenfish::board::Move;
 use queenfish::board::bishop_magic::init_bishop_magics;
@@ -19,76 +17,50 @@ use queenfish::board::{Board as QueenFishBoard, UnMakeMove};
 use std::sync::mpsc::Sender;
 use std::{collections::HashSet, path::Path};
 
-enum AnalysisLine {
-    Move(String),
-    Depth {
-        depth: Option<String>,
-        selective_depth: Option<String>,
-        score: Option<String>,
-        best_move: Option<String>,
-        nodes: Option<String>,
-        time: Option<String>,
-    },
+pub struct EnginesServices {
+    engines: Vec<Engine>,
+    is_analyzing: bool,
 }
-impl AnalysisLine {
-    fn new(line: String) -> Option<AnalysisLine> {
-        let line = line.trim().replace("\n", "");
-        let args = line.split_whitespace().collect::<Vec<_>>();
-        if line.starts_with("bestmove") {
-            return Some(AnalysisLine::Move(args[1].to_string()));
-        } else if line.starts_with("info") {
-            let mut depth = None;
-            let mut nodes = None;
-            let mut best_move = None;
-            let mut time = None;
-            let mut score = None;
 
-            let depth_index = args.iter().position(|str| str == &"depth");
-            if let Some(depth_index) = depth_index {
-                if let Some(depth_str) = args.get(depth_index + 1) {
-                    depth = Some(depth_str.to_string());
-                }
-            }
-            let score_index = args.iter().position(|str| str == &"cp" || str == &"mate");
-            if let Some(score_index) = score_index {
-                if let Some(score_str) = args.get(score_index + 1) {
-                    score = Some(score_str.to_string());
-                }
-            }
-            let nodes_index = args.iter().position(|str| str == &"nodes");
-            if let Some(nodes_index) = nodes_index {
-                if let Some(nodes_str) = args.get(nodes_index + 1) {
-                    nodes = Some(nodes_str.to_string());
-                }
-            }
-            let best_move_index = args.iter().position(|str| str == &"pv");
-            if let Some(best_move_index) = best_move_index {
-                if let Some(best_move_str) = args.get(best_move_index + 1) {
-                    best_move = Some(best_move_str.to_string());
-                }
-            }
-            let time_index = args.iter().position(|str| str == &"time");
-            if let Some(time_index) = time_index {
-                if let Some(time_str) = args.get(time_index + 1) {
-                    time = Some(time_str.to_string());
-                }
-            }
-
-            return Some(AnalysisLine::Depth {
-                depth: depth,
-                selective_depth: None,
-                score,
-                best_move: best_move,
-                nodes,
-                time,
-            });
+impl EnginesServices {
+    pub fn new() -> Self {
+        EnginesServices {
+            engines: vec![],
+            is_analyzing: false,
         }
-        None
+    }
+    pub fn toggle_analyze(&mut self, board: &QueenFishBoard) {
+        println!("toggle analyze, is_analyzing: {}", self.is_analyzing);
+
+        if self.is_analyzing {
+            self.is_analyzing = false;
+            self.engines
+                .iter_mut()
+                .for_each(|engine| {
+                    engine.send_command("stop\n");
+                    engine.analysis.clear();
+                });
+            return;
+        }
+        self.is_analyzing = true;
+        self.engines.iter_mut().for_each(|engine| {
+            engine.send_command("stop\n");
+            engine.analysis.clear();
+            engine.send_command(format!("position fen {} 0 1\n", board.to_fen()).as_str());
+            engine.send_command("go\n")
+        });
+    }
+    pub fn poll_engines(&mut self) {
+        self.engines
+            .iter_mut()
+            .for_each(|engine| engine.poll_engine());
+
     }
 }
 
 pub struct SharedState {
     fen_string: Option<SharedString>,
+    engines: EnginesServices,
 }
 impl Global for SharedState {}
 
@@ -96,34 +68,43 @@ struct EngineOptionsWindow {
     engine_tx: Sender<String>,
     focus_handle: gpui::FocusHandle,
     options: Vec<EngineOption>,
-}
+} //
 
 impl Render for EngineOptionsWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-
         let options = self.options.iter().map(|option| match option {
             EngineOption::CHECK { name, value } => {
                 let value = *value;
                 let name = name.clone();
-            div()
-                .flex()
-                .gap_2()
-                .items_center()
-                .child(name.clone())
-                .child(
-                    check_box(value)
-                        .on_any_mouse_down(cx.listener(move |engine_options_window, _, _, cx| {
+                div()
+                    .flex()
+                    .gap_2()
+                    .items_center()
+                    .child(name.clone())
+                    .child(check_box(value).on_any_mouse_down(cx.listener(
+                        move |engine_options_window, _, _, cx| {
                             let engine_tx = engine_options_window.engine_tx.clone();
-                            if let Some(option) = engine_options_window.options.iter_mut().find(|o| match o {EngineOption::CHECK { name: name_inner, .. } => *name_inner == name, _ => false}) {
+                            if let Some(option) =
+                                engine_options_window.options.iter_mut().find(|o| match o {
+                                    EngineOption::CHECK {
+                                        name: name_inner, ..
+                                    } => *name_inner == name,
+                                    _ => false,
+                                })
+                            {
                                 if let EngineOption::CHECK { value, .. } = option {
                                     *value = !*value;
                                 }
                             }
-                            let _ = engine_tx.send(format!("setoption name {} value {}\n", name.clone(), !(value)));
+                            let _ = engine_tx.send(format!(
+                                "setoption name {} value {}\n",
+                                name.clone(),
+                                !(value)
+                            ));
                             cx.notify();
-                        })),
-                )
-            },
+                        },
+                    )))
+            }
             EngineOption::SPIN {
                 name,
                 value,
@@ -200,8 +181,6 @@ struct Board {
     board: QueenFishBoard,
     focus_handle: gpui::FocusHandle,
     available_moves: Vec<(u8, u8)>,
-    analysis: Vec<AnalysisLine>,
-    engine_handle: Option<EngineHandle>,
     is_analyzing: bool,
     selected_square: Option<u8>,
     unmake_move_history: Vec<UnMakeMove>,
@@ -225,8 +204,7 @@ impl Board {
             .collect::<Vec<_>>();
         if available_squares.contains(&square) {
             self.selected_square = None;
-            self.engine_handle.as_mut().unwrap().send_command("stop\n");
-            self.analysis.clear();
+            // self.engine_handle.as_mut().unwrap().send_command("stop\n");
 
             let selected_mv = self
                 .available_moves
@@ -257,27 +235,6 @@ impl Board {
         }
     } //
 
-    pub fn analyze(&mut self, cx: &mut Context<Self>) {
-        let Some(handle) = self.engine_handle.as_mut() else {
-            return;
-        };
-
-        if self.is_analyzing {
-            handle.send_command("stop\n");
-            self.analysis.clear();
-            self.is_analyzing = false;
-        } else {
-            handle.send_command("stop\n");
-            self.analysis.clear();
-            self.is_analyzing = true;
-            let command = format!("position fen {} 0 1\n", self.board.to_fen());
-            handle.send_command(&command);
-            handle.send_command("go\n");
-        }
-
-        cx.notify();
-    } //
-
     pub fn new(focus_handle: gpui::FocusHandle) -> Self {
         let board = QueenFishBoard::new();
 
@@ -285,14 +242,13 @@ impl Board {
             "C:\\Learn\\LearnRust\\chess\\target\\release\\uci.exe",
             "Queenfish 2",
         );
-        let engine_handle = engine.spawn_handle();
 
         let element = Board {
             board,
             focus_handle,
             available_moves: Vec::new(),
-            analysis: Vec::new(),
-            engine_handle: Some(engine_handle),
+            // analysis: Vec::new(),
+            // engine_handle: Some(engine_handle),
             is_analyzing: false,
             selected_square: None,
             unmake_move_history: Vec::new(),
@@ -303,27 +259,16 @@ impl Board {
         return element;
     } //
 
-    pub fn poll_engine(&mut self, cx: &mut Context<Self>) {
-        if let Some(handle) = self.engine_handle.as_mut() {
-            while let Some(line) = handle.try_read_line() {
-                if let Some(analysis) = AnalysisLine::new(line) {
-                    self.analysis.push(analysis);
-                    cx.notify();
-                }
-            }
-        }
-    } //
-
     pub fn reset_board(&mut self) {
         self.board = QueenFishBoard::new();
         self.available_moves = Vec::new();
         self.current_move_index = 0;
         self.make_move_history = Vec::new();
         self.unmake_move_history = Vec::new();
-        if let Some(handle) = self.engine_handle.as_mut() {
-            handle.send_command("stop\n");
-        }
-        self.analysis.clear();
+        // if let Some(handle) = self.engine_handle.as_mut() {
+        //     handle.send_command("stop\n");
+        // }
+        // self.analysis.clear();
         self.is_analyzing = false;
     } //
 
@@ -339,8 +284,8 @@ impl Board {
         }
 
         self.is_analyzing = false;
-        self.analysis.clear();
-        self.engine_handle.as_mut().unwrap().send_command("stop\n");
+        // self.analysis.clear();
+        // self.engine_handle.as_mut().unwrap().send_command("stop\n");
         let mv = Move::from_uci(mv.as_str(), &(self.board));
         let unmakemove = self.board.make_move(mv);
         self.make_move_history.push(mv);
@@ -361,8 +306,8 @@ impl Board {
             return;
         }
         self.is_analyzing = false;
-        self.analysis.clear();
-        self.engine_handle.as_mut().unwrap().send_command("stop\n");
+        // self.analysis.clear();
+        // self.engine_handle.as_mut().unwrap().send_command("stop\n");
         let mv = self.make_move_history[self.current_move_index];
         self.board.make_move(mv);
         self.current_move_index += 1;
@@ -375,8 +320,8 @@ impl Board {
         }
         let current_move_index = self.current_move_index - 1;
         self.is_analyzing = false;
-        self.analysis.clear();
-        self.engine_handle.as_mut().unwrap().send_command("stop\n");
+        // self.analysis.clear();
+        // self.engine_handle.as_mut().unwrap().send_command("stop\n");
         let unmake = self.unmake_move_history[current_move_index];
         self.board.unmake_move(unmake);
         self.current_move_index -= 1;
@@ -385,13 +330,82 @@ impl Board {
 
 impl Render for Board {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(fen) = cx.global::<SharedState>().fen_string.clone() {
+        let global = cx.global_mut::<SharedState>();
+        if let Some(fen) = global.fen_string.clone() {
             self.load_from_fen(fen.to_string());
-            cx.global_mut::<SharedState>().fen_string = None;
-            cx.notify();
+            global.fen_string = None;
         }
+        global.engines.poll_engines();
 
-        self.poll_engine(cx);
+
+        let analysis = global.engines.engines.iter().map(|engine| {
+            return div()
+                .id(ElementId::named_usize(engine.name.clone(), 0))
+                .overflow_y_scroll()
+                .w_full()
+                .h_full()
+                .bg(rgb(gui::colors::SECONDARY_BACKGROUND))
+                .rounded_sm()
+                .py_1()
+                .px_4()
+                .text_color(gpui::white())
+                .child(div().child(engine.name.clone()))
+                .child(seperator(gui::colors::MUTED))
+                .child(
+                    div()
+                        .px_4()
+                        // .when(!self.is_analyzing, |this| this.hidden())
+                        .children(engine.analysis.iter().rev().map(|x| {
+                            match x {
+                                AnalysisLine::Move(m) => {
+                                    return div()
+                                        .flex()
+                                        .flex_row()
+                                        .gap_2()
+                                        .items_center()
+                                        .child(format!("Best Move: {}", m))
+                                        .text_color(gpui::white());
+                                }
+                                AnalysisLine::Depth {
+                                    depth,
+                                    score,
+                                    best_move: _best_move,
+                                    nodes,
+                                    selective_depth,
+                                    time,
+                                } => div().child(
+                                    div().flex().children(
+                                        [
+                                            (depth, 30),
+                                            (score, 50),
+                                            (nodes, 80),
+                                            (time, 80),
+                                            (selective_depth, 20),
+                                        ]
+                                        .iter()
+                                        .filter(|x| x.0.is_some())
+                                        .map(|x| {
+                                            div()
+                                                .flex()
+                                                .flex_row()
+                                                .gap_2()
+                                                .items_center()
+                                                .w(px(x.1 as f32))
+                                                .px_2()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .child(x.0.clone().unwrap())
+                                                .text_color(gpui::white())
+                                                .border_r_1()
+                                                .border_color(rgb(gui::colors::MUTED))
+                                        }),
+                                    ),
+                                ), // .child(seperator(gui::colors::BACKGROUND)),
+                            }
+                        })),
+                );
+        }).collect::<Vec<_>>();
 
         let squares = (0..64)
             .collect::<Vec<_>>()
@@ -565,24 +579,24 @@ impl Render for Board {
                     )
                     .child(menu_button("Engine Options").on_any_mouse_down(cx.listener(
                         |board, _, _, cx| {
-                            let bounds = Bounds::centered(None, size(px(300.), px(400.)), cx);
-                            let options = WindowOptions {
-                                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                                ..Default::default()
-                            };
-                            let engine_handle = board.engine_handle.as_mut().unwrap();
-                            let engine_options = engine_handle.detect_engine_options().clone();
+                            // let bounds = Bounds::centered(None, size(px(300.), px(400.)), cx);
+                            // let options = WindowOptions {
+                            //     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                            //     ..Default::default()
+                            // };
+                            // // let engine_handle = board.engine_handle.as_mut().unwrap();
+                            // // let engine_options = engine_handle.detect_engine_options().clone();
 
-                            let window = cx
-                                .open_window(options, |_, cx| {
-                                    cx.new(|cx| EngineOptionsWindow {
-                                        engine_tx: engine_handle.tx.clone(),
-                                        options: engine_options,
-                                        focus_handle: cx.focus_handle(),
-                                    })
-                                })
-                                .unwrap();
-                            window.update(cx, |_, _, cx| cx.entity()).unwrap();
+                            // let window = cx
+                            //     .open_window(options, |_, cx| {
+                            //         cx.new(|cx| EngineOptionsWindow {
+                            //             engine_tx: engine_handle.tx.clone(),
+                            //             options: engine_options,
+                            //             focus_handle: cx.focus_handle(),
+                            //         })
+                            //     })
+                            //     .unwrap();
+                            // window.update(cx, |_, _, cx| cx.entity()).unwrap();
                         },
                     ))),
             ) //
@@ -622,7 +636,10 @@ impl Render for Board {
                                 )
                                 .on_any_mouse_down(cx.listener(
                                     move |board, _event, _window, cx| {
-                                        board.analyze(cx);
+                                        // board.analyze(cx);
+                                        cx.global_mut::<SharedState>()
+                                            .engines
+                                            .toggle_analyze(&board.board);
                                     },
                                 )),
                             )
@@ -651,95 +668,14 @@ impl Render for Board {
                     ) //
                     .child(
                         div()
-                            .id("analysis")
-                            .overflow_y_scroll()
-                            .w_full()
-                            .h_full()
-                            .mb_3()
-                            .bg(rgb(gui::colors::SECONDARY_BACKGROUND))
-                            .rounded_sm()
-                            .py_1()
-                            .px_4()
-                            .text_color(gpui::white())
-                            .child(div().child(format!(
-                                "{}",
-                                self.engine_handle.as_ref().unwrap().engine.name
-                            )))
-                            .child(seperator(gui::colors::MUTED))
-                            .child(
-                                div()
-                                    .px_4()
-                                    .when(!self.is_analyzing, |this| this.hidden())
-                                    .children(self.analysis.iter().rev().map(
-                                        |x: &AnalysisLine| {
-                                            match x {
-                                                AnalysisLine::Move(m) => {
-                                                    let mv = m.clone();
-                                                    return div()
-                                                        .flex()
-                                                        .flex_row()
-                                                        .gap_2()
-                                                        .items_center()
-                                                        .child(format!("Best Move: {}", m))
-                                                        .child(
-                                                            button("Play This Move")
-                                                                .on_any_mouse_down(cx.listener(
-                                                                    move |board, _, _, cx| {
-                                                                        board.play_move(
-                                                                            mv.split(" ")
-                                                                                .collect::<Vec<_>>(
-                                                                                )[0]
-                                                                            .to_string(),
-                                                                        );
-                                                                        cx.notify();
-                                                                    },
-                                                                )),
-                                                        )
-                                                        .text_color(gpui::white());
-                                                }
-                                                AnalysisLine::Depth {
-                                                    depth,
-                                                    score,
-                                                    best_move: _best_move,
-                                                    nodes,
-                                                    selective_depth,
-                                                    time,
-                                                } => div().child(
-                                                    div().flex().children(
-                                                        [
-                                                            (depth, 30),
-                                                            (score, 50),
-                                                            (nodes, 80),
-                                                            (time, 80),
-                                                            (selective_depth, 20),
-                                                        ]
-                                                        .iter()
-                                                        .filter(|x| x.0.is_some())
-                                                        .map(|x| {
-                                                            div()
-                                                                .flex()
-                                                                .flex_row()
-                                                                .gap_2()
-                                                                .items_center()
-                                                                .w(px(x.1 as f32))
-                                                                .px_2()
-                                                                .flex()
-                                                                .items_center()
-                                                                .justify_center()
-                                                                .child(x.0.clone().unwrap())
-                                                                .text_color(gpui::white())
-                                                                .border_r_1()
-                                                                .border_color(rgb(
-                                                                    gui::colors::MUTED,
-                                                                ))
-                                                        }),
-                                                    ),
-                                                ), // .child(seperator(gui::colors::BACKGROUND)),
-                                            }
-                                        },
-                                    )),
-                            ),
-                    ), //
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .children(
+                            analysis
+                        ), //
+                    ) //
             ) //
     }
 }
@@ -751,7 +687,23 @@ fn main() {
     Application::new().run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(500.), px(500.0)), cx);
 
-        cx.set_global(SharedState { fen_string: None });
+        let engines = vec![
+            Engine::new(
+                "C:\\Learn\\LearnRust\\chess\\target\\release\\uci.exe",
+                "Queenfish 2",
+            ),
+            Engine::new(
+                "C:/Program Files/stockfish/stockfish-windows-x86-64-avx2.exe",
+                "Stockfish",
+            ),
+        ];
+        cx.set_global(SharedState {
+            fen_string: None,
+            engines: EnginesServices {
+                engines,
+                is_analyzing: false,
+            },
+        });
 
         cx.bind_keys([
             KeyBinding::new("backspace", Backspace, None),
