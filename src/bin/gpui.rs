@@ -8,15 +8,14 @@ use arena::gui::input::{
 };
 use arena::{AnalysisLine, Engine, EngineOption, gui};
 use gpui::{
-    App, Application, Bounds, Context, Corner, Div, ElementId, Entity, Focusable, FontWeight,
-    Global, KeyBinding, SharedString, Stateful, TitlebarOptions, Window, WindowBounds,
-    WindowOptions, anchored, deferred, div, img, prelude::*, px, rgb, size,
+    App, Application, AsyncApp, AsyncWindowContext, Bounds, Context, Corner, Div, ElementId, Entity, Focusable, FontWeight, Global, KeyBinding, MouseButton, SharedString, Stateful, TitlebarOptions, Window, WindowBounds, WindowOptions, anchored, deferred, div, img, prelude::*, px, rgb, size
 };
 use queenfish::board::Move;
 use queenfish::board::bishop_magic::init_bishop_magics;
 use queenfish::board::rook_magic::init_rook_magics;
 use queenfish::board::{Board as QueenFishBoard, UnMakeMove};
 use std::{collections::HashSet, path::Path};
+use rfd::FileDialog;
 
 pub struct EnginesServices {
     engines: Vec<Engine>,
@@ -603,32 +602,28 @@ impl Render for Board {
                                             .px_1()
                                             .cursor_pointer()
                                             .hover(|this| this.bg(rgb(gui::colors::MUTED)))
-                                            .on_any_mouse_down(cx.listener(
-                                                move |_, _, _, cx| {
-                                                    let bounds = Bounds::centered(
-                                                        None,
-                                                        size(px(300.), px(400.)),
-                                                        cx,
-                                                    );
-                                                    let options = WindowOptions {
-                                                        window_bounds: Some(
-                                                            WindowBounds::Windowed(bounds),
-                                                        ),
-                                                        ..Default::default()
-                                                    };
+                                            .on_any_mouse_down(cx.listener(move |_, _, _, cx| {
+                                                let bounds = Bounds::centered(
+                                                    None,
+                                                    size(px(300.), px(400.)),
+                                                    cx,
+                                                );
+                                                let options = WindowOptions {
+                                                    window_bounds: Some(WindowBounds::Windowed(
+                                                        bounds,
+                                                    )),
+                                                    ..Default::default()
+                                                };
 
-                                                    let window = cx
-                                                        .open_window(options, |_, cx| {
-                                                            cx.new(|_| EngineOptionsWindow {
-                                                                engine_index: index,
-                                                            })
+                                                let window = cx
+                                                    .open_window(options, |_, cx| {
+                                                        cx.new(|_| EngineOptionsWindow {
+                                                            engine_index: index,
                                                         })
-                                                        .unwrap();
-                                                    window
-                                                        .update(cx, |_, _, cx| cx.entity())
-                                                        .unwrap();
-                                                },
-                                            ));
+                                                    })
+                                                    .unwrap();
+                                                window.update(cx, |_, _, cx| cx.entity()).unwrap();
+                                            }));
                                     })
                                     .collect::<Vec<_>>();
 
@@ -640,6 +635,46 @@ impl Render for Board {
                                             .child(
                                                 div()
                                                     .children(children)
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_center()
+                                                            .gap_0p5()
+                                                            .text_xs()
+                                                            // .child(img(Path::new("svg/add.svg")).size_3())
+                                                            .child("+ Add Engine")
+                                                            .py_0p5()
+                                                            .px_1()
+                                                            .cursor_pointer()
+                                                            .hover(|this| {
+                                                                this.bg(rgb(gui::colors::MUTED))
+                                                            })
+                                                            .on_mouse_down(
+                                                                MouseButton::Left,
+                                                                cx.listener(|_, _, _, cx| {
+                                                                    let task = cx.spawn(async move |_, cx: &mut AsyncApp| {
+                                                                        println!("add engine");
+                                                                        let file_path = FileDialog::new()
+                                                                            .add_filter(
+                                                                                "Engines",
+                                                                                &["exe"],
+                                                                            )
+                                                                            .pick_file();
+                                                                        if let Some(file_path) = file_path {
+                                                                            let _ = cx.update(move |cx| {
+                                                                                let new_engine = Engine::new(
+                                                                                    file_path.to_str().unwrap(),
+                                                                                    file_path.file_name().unwrap().to_str().unwrap(),
+                                                                                );
+                                                                                cx.global_mut::<SharedState>().engines.engines.push(new_engine);
+                                                                            });
+                                                                        }
+                                                                    });
+                                                                    task.detach();
+                                                                }),
+                                                            ),
+                                                    )
                                                     .text_color(rgb(gui::colors::TEXT))
                                                     .bg(rgb(gui::colors::SECONDARY_BACKGROUND))
                                                     .on_mouse_down_out(cx.listener(
@@ -685,11 +720,7 @@ impl Render for Board {
                             .flex()
                             .gap_2()
                             .child(
-                                logo_button(
-                                    "svg/brain.svg",
-                                    0.,
-                                )
-                                .on_any_mouse_down(cx.listener(
+                                logo_button("svg/brain.svg", 0.).on_any_mouse_down(cx.listener(
                                     move |board, _event, _window, cx| {
                                         // board.analyze(cx);
                                         cx.global_mut::<SharedState>()
@@ -698,28 +729,16 @@ impl Render for Board {
                                     },
                                 )),
                             )
-                            .child(
-                                logo_button(
-                                    "svg/chevron-left.svg",
-                                    8.,
-                                )
-                                .on_any_mouse_down(cx.listener(
-                                    move |board, _event, _window, _cx| {
-                                        board.undo_move();
-                                    },
-                                )),
-                            )
-                            .child(
-                                logo_button(
-                                    "svg/chevron-right.svg",
-                                    8.,
-                                )
-                                .on_any_mouse_down(cx.listener(
-                                    move |board, _event, _window, _cx| {
-                                        board.move_forward();
-                                    },
-                                )),
-                            ),
+                            .child(logo_button("svg/chevron-left.svg", 8.).on_any_mouse_down(
+                                cx.listener(move |board, _event, _window, _cx| {
+                                    board.undo_move();
+                                }),
+                            ))
+                            .child(logo_button("svg/chevron-right.svg", 8.).on_any_mouse_down(
+                                cx.listener(move |board, _event, _window, _cx| {
+                                    board.move_forward();
+                                }),
+                            )),
                     ) //
                     .child(
                         div()
