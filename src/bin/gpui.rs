@@ -30,13 +30,11 @@ impl EnginesServices {
         }
     }
     pub fn toggle_analyze(&mut self, board: &QueenFishBoard) {
-        println!("toggle analyze, is_analyzing: {}", self.is_analyzing);
-
         if self.is_analyzing {
             self.is_analyzing = false;
             self.engines.iter_mut().for_each(|engine| {
                 engine.send_command("stop\n");
-                engine.analysis.clear();
+                // engine.analysis.clear();
             });
             return;
         }
@@ -288,7 +286,6 @@ impl Board {
 
     pub fn play_move(&mut self, mv: String) {
         if self.current_move_index != self.make_move_history.len() {
-            println!("Truncating move history");
             self.make_move_history.truncate(self.current_move_index);
             self.unmake_move_history.truncate(self.current_move_index);
         }
@@ -304,14 +301,6 @@ impl Board {
     } //
 
     pub fn move_forward(&mut self) {
-        println!("move forward {}", self.current_move_index);
-        println!(
-            "{:?}",
-            self.make_move_history
-                .iter()
-                .map(|mv| mv.to_uci())
-                .collect::<Vec<String>>()
-        );
         if self.current_move_index as i32 > (self.make_move_history.len() as i32) - 1 {
             return;
         }
@@ -324,7 +313,6 @@ impl Board {
     } //
 
     pub fn undo_move(&mut self) {
-        println!("undo move {}", self.current_move_index);
         if self.current_move_index <= 0 {
             return;
         }
@@ -358,6 +346,7 @@ impl Render for Board {
                     .overflow_y_scroll()
                     .w_full()
                     .flex_1()
+                    .min_h_0()
                     .bg(rgb(gui::colors::SECONDARY_BACKGROUND))
                     .rounded_sm()
                     .py_1()
@@ -667,7 +656,6 @@ impl Render for Board {
                                                                 MouseButton::Left,
                                                                 cx.listener(|_, _, _, cx| {
                                                                     let task = cx.spawn(async move |_, cx: &mut AsyncApp| {
-                                                                        println!("add engine");
                                                                         let file_path = FileDialog::new()
                                                                             .add_filter(
                                                                                 "Engines",
@@ -760,6 +748,7 @@ impl Render for Board {
                             .flex()
                             .flex_col()
                             .gap_1()
+                            .min_h_0()
                             .children(analysis), //
                     ), //
             ) //

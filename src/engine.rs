@@ -265,7 +265,6 @@ impl Engine {
     } //
 
     pub fn detect_engine_options(&mut self) -> Vec<EngineOption> {
-        println!("detecting engine options");
         if self.engine_handle.is_none() {
             self.spawn_handle();
             // return vec![];
@@ -332,7 +331,6 @@ impl Engine {
     } //
 
     pub fn disconnect(&mut self) {
-        println!("disconnecting engine");
         if let Some(handle) = self.engine_handle.as_mut() {
             handle.process.kill().ok();
             handle.process.wait().ok();
@@ -342,7 +340,6 @@ impl Engine {
     pub fn poll_engine(&mut self) {
         if let Some(handle) = self.engine_handle.as_mut() {
             while let Some(line) = handle.try_read_line() {
-                // println!("{}: {}", self.name, line);
                 if let Some(analysis) = AnalysisLine::new(line) {
                     self.analysis.push(analysis);
                 }
