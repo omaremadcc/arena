@@ -36,7 +36,6 @@ impl EnginesServices {
             self.is_analyzing = false;
             self.engines.iter_mut().for_each(|engine| {
                 engine.send_command("stop\n");
-                // engine.analysis.clear();
             });
             return;
         }
@@ -159,21 +158,18 @@ impl Render for EngineOptionsWindow {
                     .text_color(rgb(gui::colors::TEXT))
                     .children(options),
             )
-            .child(
-                div()
-                    .my_2()
-                    .flex()
-                    .w_auto()
-                    .text_xs()
-                    .child(
-                        button("Remove Engine")
-                            .on_any_mouse_down(cx.listener(|engine_options_window, _, window, cx| {
+            .child(div().my_2().flex().w_auto().text_xs().child(
+                button("Remove Engine").on_any_mouse_down(cx.listener(
+                    |engine_options_window, _, window, cx| {
                                 window.remove_window();
-                                cx.global_mut::<SharedState>().engines.engines.remove(engine_options_window.engine_index);
+                        cx.global_mut::<SharedState>()
+                            .engines
+                            .engines
+                            .remove(engine_options_window.engine_index);
                                 cx.notify();
-                            }))
-                    )
-            )
+                    },
+                )),
+            ))
     }
 }
 
