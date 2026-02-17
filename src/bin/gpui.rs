@@ -220,6 +220,7 @@ struct Board {
     make_move_history: Vec<Move>,
     current_move_index: usize,
     is_engines_menu_open: bool,
+    is_board_flipped: bool,
 }
 
 impl Focusable for Board {
@@ -299,6 +300,7 @@ impl Board {
             make_move_history: Vec::new(),
             current_move_index: 0,
             is_engines_menu_open: false,
+            is_board_flipped: false,
         };
 
         return element;
@@ -350,6 +352,10 @@ impl Board {
         let unmake = self.unmake_move_history[current_move_index];
         self.board.unmake_move(unmake);
         self.current_move_index -= 1;
+    } //
+
+    pub fn flip_board_visually(&mut self) {
+        self.is_board_flipped = !self.is_board_flipped;
     } //
 }
 
@@ -502,7 +508,7 @@ impl Render for Board {
             }
         }
 
-        let squares = (0..64)
+        let mut squares = (0..64)
             .collect::<Vec<_>>()
             .chunks(8)
             .rev()
@@ -662,6 +668,9 @@ impl Render for Board {
                 return element;
             })
             .collect::<Vec<_>>();
+        if self.is_board_flipped {
+            squares.reverse();
+        }
 
         let window_bounds = _window.window_bounds().get_bounds().size;
         let window_width = window_bounds.width;
@@ -885,6 +894,11 @@ impl Render for Board {
                             .child(logo_button("svg/chevron-right.svg", 8.).on_any_mouse_down(
                                 cx.listener(move |board, _event, _window, _cx| {
                                     board.move_forward();
+                                }),
+                            ))
+                            .child(logo_button("svg/flip.svg", 8.).on_any_mouse_down(
+                                cx.listener(move |board, _event, _window, _cx| {
+                                    board.flip_board_visually();
                                 }),
                             )),
                     ) //
