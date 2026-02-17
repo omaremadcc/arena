@@ -1,3 +1,4 @@
+use arena::Score;
 use arena::gui::constants::{
     BLACK_BISHOP, BLACK_KING, BLACK_KNIGHT, BLACK_PAWN, BLACK_QUEEN, BLACK_ROOK, WHITE_BISHOP,
     WHITE_KING, WHITE_KNIGHT, WHITE_PAWN, WHITE_QUEEN, WHITE_ROOK,
@@ -383,33 +384,69 @@ impl Render for Board {
                     .child(
                         div()
                             .px_4()
+                            .child(
+                                div().child(
+                                    div().flex().children(
+                                        [
+                                            ("Depth", 50),
+                                            ("Score", 100),
+                                            ("Nodes", 80),
+                                            ("Time", 80),
+                                            ("Best Move", 100),
+                                        ]
+                                        .iter()
+                                        .map(|x| {
+                                            div()
+                                                .flex()
+                                                .flex_row()
+                                                .gap_2()
+                                                .items_center()
+                                                .w(px(x.1 as f32))
+                                                .px_2()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .child(x.0)
+                                                .text_color(gpui::white())
+                                                .border_r_1()
+                                                .border_color(rgb(gui::colors::MUTED))
+                                        }),
+                                    ),
+                                ),
+                            )
                             // .when(!self.is_analyzing, |this| this.hidden())
-                            .children(engine.analysis.iter().rev().map(|x| {
-                                match x {
-                                    AnalysisLine::Move(m) => {
-                                        return div()
-                                            .flex()
-                                            .flex_row()
-                                            .gap_2()
-                                            .items_center()
-                                            .child(format!("Best Move: {}", m))
-                                            .text_color(gpui::white());
-                                    }
-                                    AnalysisLine::Depth {
-                                        depth,
-                                        score,
-                                        best_move: _best_move,
-                                        nodes,
-                                        selective_depth,
-                                        time,
-                                    } => div().child(
+                            .children(engine.analysis.iter().rev().map(|x| match x {
+                                AnalysisLine::Move(m) => {
+                                    return div()
+                                        .flex()
+                                        .flex_row()
+                                        .gap_2()
+                                        .items_center()
+                                        .child(format!("Best Move: {}", m))
+                                        .text_color(gpui::white());
+                                }
+                                AnalysisLine::Depth {
+                                    depth,
+                                    score,
+                                    best_move,
+                                    nodes,
+                                    selective_depth,
+                                    time,
+                                } => {
+                                    let score_text: Option<String> = match score {
+                                        Some(Score::Cp(cp)) => Some(format!("{} cp", cp)),
+                                        Some(Score::Mate(m)) => Some(format!("Mate in {}", m)),
+                                        None => None,
+                                    };
+                                    div().child(
                                         div().flex().children(
                                             [
-                                                (depth, 30),
-                                                (score, 50),
+                                                (depth, 50),
+                                                (&score_text, 100),
                                                 (nodes, 80),
                                                 (time, 80),
                                                 (selective_depth, 20),
+                                                (&best_move, 100),
                                             ]
                                             .iter()
                                             .filter(|x| x.0.is_some())
@@ -430,7 +467,7 @@ impl Render for Board {
                                                     .border_color(rgb(gui::colors::MUTED))
                                             }),
                                         ),
-                                    ), // .child(seperator(gui::colors::BACKGROUND)),
+                                    )
                                 }
                             })),
                     );

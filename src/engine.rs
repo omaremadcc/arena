@@ -6,12 +6,18 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 
 #[derive(Debug)]
+pub enum Score {
+    Cp(i32),
+    Mate(i32),
+}
+
+#[derive(Debug)]
 pub enum AnalysisLine {
     Move(String),
     Depth {
         depth: Option<String>,
         selective_depth: Option<String>,
-        score: Option<String>,
+        score: Option<Score>,
         best_move: Option<String>,
         nodes: Option<String>,
         time: Option<String>,
@@ -28,7 +34,7 @@ impl AnalysisLine {
             let mut nodes = None;
             let mut best_move = None;
             let mut time = None;
-            let mut score = None;
+            let mut score: Option<Score> = None;
 
             let depth_index = args.iter().position(|str| str == &"depth");
             if let Some(depth_index) = depth_index {
@@ -39,7 +45,15 @@ impl AnalysisLine {
             let score_index = args.iter().position(|str| str == &"cp" || str == &"mate");
             if let Some(score_index) = score_index {
                 if let Some(score_str) = args.get(score_index + 1) {
-                    score = Some(score_str.to_string());
+                    if args[score_index] == "cp" {
+                        if let Ok(score_value) = score_str.parse::<i32>() {
+                            score = Some(Score::Cp(score_value));
+                        }
+                    } else if args[score_index] == "mate" {
+                        if let Ok(score_value) = score_str.parse::<i32>() {
+                            score = Some(Score::Mate(score_value));
+                        }
+                    }
                 }
             }
             let nodes_index = args.iter().position(|str| str == &"nodes");
