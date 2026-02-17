@@ -7,10 +7,10 @@ use arena::gui::input::{
     Backspace, Copy, Cut, Delete, End, Home, InputController, InputField, Left, Paste, Right,
     SelectAll, SelectLeft, SelectRight, ShowCharacterPalette,
 };
-use arena::{AnalysisLine, Engine, EngineOption, gui};
+use arena::{AnalysisLine, Engine, gui};
 use gpui::{
-    App, Application, AsyncApp, Bounds, Context, Corner, Div, ElementId, Entity, Focusable,
-    FontWeight, Global, KeyBinding, MouseButton, SharedString, Stateful, TitlebarOptions, Window,
+    App, Application, AsyncApp, Bounds, Context, Corner, ElementId, Focusable,
+    KeyBinding, MouseButton, SharedString,  TitlebarOptions, Window,
     WindowBounds, WindowOptions, anchored, deferred, div, img, prelude::*, px, rgb, size,
 };
 use queenfish::board::Move;
@@ -19,195 +19,12 @@ use queenfish::board::rook_magic::init_rook_magics;
 use queenfish::board::{Board as QueenFishBoard, UnMakeMove};
 use rfd::FileDialog;
 use std::{collections::HashSet, path::Path};
+use arena::gui::fen_window::FenWindow;
+use arena::gui::state::SharedState;
+use arena::gui::components::{menu_button, seperator, logo_button};
+use arena::gui::state::EnginesServices;
+use arena::gui::engine_options::EngineOptionsWindow;
 
-pub struct EnginesServices {
-    engines: Vec<Engine>,
-    is_analyzing: bool,
-}
-
-impl EnginesServices {
-    pub fn new() -> Self {
-        EnginesServices {
-            engines: vec![],
-            is_analyzing: false,
-        }
-    }
-    pub fn toggle_analyze(&mut self, board: &QueenFishBoard) {
-        if self.is_analyzing {
-            self.is_analyzing = false;
-            self.engines.iter_mut().for_each(|engine| {
-                engine.send_command("stop\n");
-            });
-            return;
-        }
-        self.is_analyzing = true;
-        self.engines.iter_mut().for_each(|engine| {
-            engine.send_command("stop\n");
-            engine.analysis.clear();
-            engine.send_command(format!("position fen {} 0 1\n", board.to_fen()).as_str());
-            engine.send_command("go\n")
-        });
-    }
-    pub fn poll_engines(&mut self) {
-        self.engines
-            .iter_mut()
-            .for_each(|engine| engine.poll_engine());
-    }
-}
-
-pub struct SharedState {
-    fen_string: Option<SharedString>,
-    engines: EnginesServices,
-}
-impl Global for SharedState {}
-
-struct EngineOptionsWindow {
-    engine_index: usize,
-} //
-
-impl Render for EngineOptionsWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let engine = &mut cx.global_mut::<SharedState>().engines.engines[self.engine_index];
-        let engine_options = engine.engine_options.clone();
-        let engine_is_show = engine.is_show;
-
-        let options = engine_options
-            .iter()
-            .enumerate()
-            .map(|(index, option)| match option {
-                EngineOption::CHECK { name, value } => {
-                    let value = *value;
-                    let name = name.clone();
-                    div()
-                        .flex()
-                        .gap_2()
-                        .items_center()
-                        .child(name.clone())
-                        .child(check_box(value).on_any_mouse_down(cx.listener(
-                            move |engine_options_window, _, _, cx| {
-                                let state: &mut SharedState = cx.global_mut::<SharedState>();
-                                let engine =
-                                    &mut state.engines.engines[engine_options_window.engine_index];
-
-                                let (name, new_value) = {
-                                    let option = &mut engine.engine_options[index];
-
-                                    match option {
-                                        EngineOption::CHECK { value, name } => {
-                                            *value = !*value;
-                                            (name.clone(), *value)
-                                        }
-                                        _ => return,
-                                    }
-                                }; // ← option borrow ends here
-                                let _ = engine.send_command(
-                                    format!("setoption name {} value {}\n", name, new_value)
-                                        .as_str(),
-                                );
-                                cx.notify();
-                            },
-                        )))
-                }
-                EngineOption::SPIN {
-                    name,
-                    value,
-                    min,
-                    max,
-                } => div().child(format!(
-                    "{}: {} ({}/{})",
-                    name,
-                    value,
-                    min.unwrap_or(0),
-                    max.unwrap_or(0)
-                )),
-            });
-        div()
-            .id("engine_options_window")
-            .overflow_y_scroll()
-            .size_full()
-            .bg(rgb(gui::colors::BACKGROUND))
-            .text_color(gpui::white())
-            .text_2xl()
-            .font_weight(FontWeight::BOLD)
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .py_8()
-            .px_6()
-            .child(format!("Engine Options:"))
-            .child(
-                div()
-                    .my_2()
-                    .text_base()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child("Show Analysis")
-                    .child(check_box(engine_is_show))
-                    .on_any_mouse_down(cx.listener(|engine_options_window, _, _, cx| {
-                        let engine = &mut cx.global_mut::<SharedState>().engines.engines
-                            [engine_options_window.engine_index];
-                        engine.is_show = !engine.is_show;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .px_2()
-                    .text_base()
-                    .font_weight(FontWeight::NORMAL)
-                    .text_color(rgb(gui::colors::TEXT))
-                    .children(options),
-            )
-            .child(div().my_2().flex().w_auto().text_xs().child(
-                button("Remove Engine").on_any_mouse_down(cx.listener(
-                    |engine_options_window, _, window, cx| {
-                        window.remove_window();
-                        cx.global_mut::<SharedState>()
-                            .engines
-                            .engines
-                            .remove(engine_options_window.engine_index);
-                        cx.notify();
-                    },
-                )),
-            ))
-    }
-}
-
-struct FenWindow {
-    input_controller: Entity<InputController>,
-    focus_handle: gpui::FocusHandle,
-}
-impl Focusable for FenWindow {
-    fn focus_handle(&self, _cx: &App) -> gpui::FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
-impl Render for FenWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .bg(rgb(gui::colors::BACKGROUND))
-            .text_color(rgb(gui::colors::TEXT))
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .size_full()
-            .child(format!("Enter FEN:"))
-            .child(div().child(self.input_controller.clone()).w_full())
-            .child(
-                button("Load").on_any_mouse_down(cx.listener(|this, _, _, cx| {
-                    let input_controller = this.input_controller.clone().read(cx);
-                    let input_field = input_controller.text_input.clone().read(cx);
-                    let content = input_field.content.as_str().to_string();
-                    cx.global_mut::<SharedState>().fen_string =
-                        Some(SharedString::from(content.clone()));
-                    cx.notify();
-                })),
-            )
-    }
-}
 
 struct Board {
     board: QueenFishBoard,
@@ -668,7 +485,7 @@ impl Render for Board {
                                 .child(img(Path::new("svg/crown.svg")).size_full()),
                         ))
                     }
-                }
+                } //
 
                 if let Some(index) = losing_tag_index {
                     if index == i {
@@ -687,7 +504,7 @@ impl Render for Board {
                                 .child(img(Path::new("svg/forfeit.svg")).size_full()),
                         ))
                     }
-                }
+                } //
 
                 if let Some((white_index, black_index)) = draw_tag_index {
                     if white_index == i || black_index == i {
@@ -706,7 +523,7 @@ impl Render for Board {
                                 .child(img(Path::new("svg/half.svg")).size_full()),
                         ))
                     }
-                }
+                } //
 
                 element = element.on_mouse_down(
                     gpui::MouseButton::Left,
@@ -1038,68 +855,4 @@ fn main() {
         })
         .detach();
     });
-}
-
-fn button(text: &str) -> impl IntoElement + InteractiveElement {
-    div()
-        .id(ElementId::Name(SharedString::new(text).clone()))
-        .flex_none()
-        .px_2()
-        .bg(rgb(0xf7f7f7))
-        .text_color(gpui::black())
-        .border_1()
-        .border_color(rgb(0xe0e0e0))
-        .rounded_sm()
-        .cursor_pointer()
-        .child(text.to_string())
-} //
-
-fn menu_button(text: &str) -> Stateful<Div> {
-    div()
-        .id(ElementId::Name(SharedString::new(text).clone()))
-        .flex()
-        .px(px(2.))
-        .hover(|this| this.bg(gpui::white()))
-        .font_weight(FontWeight::MEDIUM)
-        .text_xs()
-        .border(px(1.))
-        .border_color(gpui::black())
-        .bg(rgb(gui::colors::TEXT))
-        .text_color(rgb(gui::colors::BACKGROUND))
-        .cursor_pointer()
-        .child(text.to_string())
-} //
-
-fn seperator(color: u32) -> impl IntoElement + InteractiveElement {
-    div().w_full().h(px(1.)).bg(rgb(color))
-} //
-
-fn logo_button(path: &str, padding: f32) -> impl IntoElement + InteractiveElement {
-    div()
-        .size(px(30.))
-        .rounded_sm()
-        .bg(rgb(gui::colors::TEXT))
-        .flex()
-        .gap_2()
-        .items_center()
-        .justify_between()
-        .p(px(padding))
-        .child(img(Path::new(path)).size_full())
-        .hover(|this| this.bg(gpui::white()))
-        .cursor_pointer()
-        .text_color(gpui::black())
-} //
-
-fn check_box(state: bool) -> impl IntoElement + InteractiveElement {
-    div()
-        .w(px(12.))
-        .h(px(12.))
-        .flex_none()
-        .bg(rgb(0xf7f7f7))
-        .text_color(gpui::black())
-        .border_1()
-        .border_color(rgb(0xe0e0e0))
-        .rounded_sm()
-        .cursor_pointer()
-        .when(state, |this| this.bg(rgb(0x3b82f6)))
 } //
