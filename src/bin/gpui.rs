@@ -1,8 +1,4 @@
 use arena::Score;
-use arena::gui::constants::{
-    BLACK_BISHOP, BLACK_KING, BLACK_KNIGHT, BLACK_PAWN, BLACK_QUEEN, BLACK_ROOK, WHITE_BISHOP,
-    WHITE_KING, WHITE_KNIGHT, WHITE_PAWN, WHITE_QUEEN, WHITE_ROOK,
-};
 use arena::gui::input::{
     Backspace, Copy, Cut, Delete, End, Home, InputController, InputField, Left, Paste, Right,
     SelectAll, SelectLeft, SelectRight, ShowCharacterPalette,
@@ -11,17 +7,17 @@ use arena::{AnalysisLine, Engine, gui};
 use gpui::{
     App, Application, AsyncApp, Bounds, Context, Corner, ElementId, Focusable,
     KeyBinding, MouseButton, SharedString,  TitlebarOptions, Window,
-    WindowBounds, WindowOptions, anchored, deferred, div, img, prelude::*, px, rgb, size,
+    WindowBounds, WindowOptions, anchored, deferred, div, prelude::*, px, rgb, size,
 };
 use queenfish::board::Move;
 use queenfish::board::bishop_magic::init_bishop_magics;
 use queenfish::board::rook_magic::init_rook_magics;
 use queenfish::board::{Board as QueenFishBoard, UnMakeMove};
 use rfd::FileDialog;
-use std::{collections::HashSet, path::Path};
+use std::{collections::HashSet};
 use arena::gui::fen_window::FenWindow;
 use arena::gui::state::SharedState;
-use arena::gui::components::{menu_button, seperator, logo_button};
+use arena::gui::components::{board_square, logo_button, menu_button, seperator};
 use arena::gui::state::EnginesServices;
 use arena::gui::engine_options::EngineOptionsWindow;
 
@@ -29,9 +25,9 @@ use arena::gui::engine_options::EngineOptionsWindow;
 struct Board {
     board: QueenFishBoard,
     focus_handle: gpui::FocusHandle,
-    available_moves: Vec<(u8, u8)>,
+    available_moves: Vec<(usize, usize)>,
     is_analyzing: bool,
-    selected_square: Option<u8>,
+    selected_square: Option<usize>,
     unmake_move_history: Vec<UnMakeMove>,
     make_move_history: Vec<Move>,
     current_move_index: usize,
@@ -46,7 +42,7 @@ impl Focusable for Board {
 }
 
 impl Board {
-    pub fn select_square(&mut self, square: u8) {
+    pub fn select_square(&mut self, square: usize) {
         match self.board.game_result() {
             queenfish::board::GameResult::InProgress => {}
             _ => {
@@ -79,7 +75,7 @@ impl Board {
                 .unwrap();
             let mv = moves
                 .iter()
-                .find(|mv| (mv.from() as u8, mv.to() as u8) == *selected_mv)
+                .find(|mv| (mv.from(), mv.to()) == *selected_mv)
                 .unwrap();
             self.play_move(mv.to_uci());
             self.available_moves = Vec::new();
@@ -87,8 +83,8 @@ impl Board {
         } else {
             let avail_squares = moves
                 .iter()
-                .filter(|&x| x.from() == square as usize)
-                .map(|&x| (x.from() as u8, x.to() as u8))
+                .filter(|&x| x.from() == square)
+                .map(|&x| (x.from(), x.to()))
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect();
@@ -337,201 +333,16 @@ impl Render for Board {
             .flatten()
             .copied()
             .map(|i| {
-                let file = i % 8;
-                let rank = i / 8;
-
-                let mut color = if (file + rank) % 2 == 0 {
-                    gui::colors::BOARD_LIGHT
-                } else {
-                    gui::colors::BOARD_DARK
-                };
-
-                if let Some(selected_square) = self.selected_square {
-                    if selected_square == i as u8 {
-                        color = gui::colors::SQUARE_SELECTION;
-                    }
-                }
-
-                let mut piece_image = "";
-                if let Some(piece) = self.board.piece_at[i] {
-                    piece_image = match piece as usize {
-                        0 => WHITE_PAWN,
-                        1 => WHITE_KNIGHT,
-                        2 => WHITE_BISHOP,
-                        3 => WHITE_ROOK,
-                        4 => WHITE_QUEEN,
-                        5 => WHITE_KING,
-                        6 => BLACK_PAWN,
-                        7 => BLACK_KNIGHT,
-                        8 => BLACK_BISHOP,
-                        9 => BLACK_ROOK,
-                        10 => BLACK_QUEEN,
-                        11 => BLACK_KING,
-                        _ => "",
-                    };
-                }
-
-                let mut element = div()
-                    .size_full()
-                    .bg(rgb(color))
-                    .p(px(2.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(img(Path::new(piece_image)).size_full());
-
-                if (i < 8 && !self.is_board_flipped) || (i > 55 && self.is_board_flipped) {
-                    element = element.child(
-                        div()
-                            .absolute()
-                            .right(px(3.))
-                            .bottom_0()
-                            .text_color(match color {
-                                gui::colors::BOARD_DARK => rgb(gui::colors::BOARD_LIGHT),
-                                _ => rgb(gui::colors::BOARD_DARK),
-                            })
-                            .text_size(px(10.))
-                            .child(
-                                ((b'a' + (i as u8 % 8)) as char).to_string()
-                            ),
-                    );
-                }
-                if (i % 8 == 0 && !self.is_board_flipped) || (i % 8 == 7 && self.is_board_flipped) {
-                    element = element.child(
-                        div()
-                            .absolute()
-                            .left(px(3.))
-                            .top_0()
-                            .text_color(match color {
-                                gui::colors::BOARD_DARK => rgb(gui::colors::BOARD_LIGHT),
-                                _ => rgb(gui::colors::BOARD_DARK),
-                            })
-                            .text_size(px(10.))
-                            .child(
-                                ((i / 8) + 1).to_string()
-                            ),
-                    );
-                }
-                if is_king_in_check && i == current_turn_king_sq as usize {
-                    element = element.child(
-                        div()
-                            .absolute()
-                            .size_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(rgb(gui::colors::ERROR))
-                            .opacity(0.5)
-                    );
-                }
-
-                if self
-                    .available_moves
-                    .iter()
-                    .map(|x| x.1)
-                    .collect::<Vec<u8>>()
-                    .contains(&(i as u8))
-                {
-                    if self.board.piece_at[i].is_some() {
-                        element = element.child(
-                            div()
-                                .absolute()
-                                .size_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(
-                                    div()
-                                        .border_4()
-                                        .border_color(rgb(0xaeb187))
-                                        .rounded_full()
-                                        .w_full() // Adjust size as needed
-                                        .h_full(),
-                                ),
-                        );
-                    } else {
-                        element = element.child(
-                            div()
-                                .absolute()
-                                .size_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(
-                                    div()
-                                        .bg(rgb(gui::colors::SQUARE_SELECTION))
-                                        .rounded_full()
-                                        .w_1_3() // Adjust size as needed
-                                        .h_1_3(),
-                                ),
-                        );
-                    }
-                }
-
-                if let Some(index) = winning_tag_index {
-                    if index == i {
-                        element = element.child(deferred(
-                            div()
-                                .absolute()
-                                .right_neg_1_6()
-                                .top_neg_1_6()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .bg(rgb(gui::colors::SUCCESS))
-                                .rounded_full()
-                                .w_1_2() // Adjust size as needed
-                                .h_1_2()
-                                .child(img(Path::new("svg/crown.svg")).size_full()),
-                        ))
-                    }
-                } //
-
-                if let Some(index) = losing_tag_index {
-                    if index == i {
-                        element = element.child(deferred(
-                            div()
-                                .absolute()
-                                .right_neg_1_6()
-                                .top_neg_1_6()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .bg(rgb(gui::colors::ERROR))
-                                .rounded_full()
-                                .w_1_2() // Adjust size as needed
-                                .h_1_2()
-                                .child(img(Path::new("svg/forfeit.svg")).size_full()),
-                        ))
-                    }
-                } //
-
-                if let Some((white_index, black_index)) = draw_tag_index {
-                    if white_index == i || black_index == i {
-                        element = element.child(deferred(
-                            div()
-                                .absolute()
-                                .right_neg_1_6()
-                                .top_neg_1_6()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .bg(rgb(gui::colors::MUTED))
-                                .rounded_full()
-                                .w_1_2() // Adjust size as needed
-                                .h_1_2()
-                                .child(img(Path::new("svg/half.svg")).size_full()),
-                        ))
-                    }
-                } //
+                let mut element = board_square(i, self.selected_square, self.board.piece_at[i], self.is_board_flipped, is_king_in_check, current_turn_king_sq, &self.available_moves, winning_tag_index, losing_tag_index, draw_tag_index);
 
                 element = element.on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(move |board, _event, _window, cx| {
-                        board.select_square(i as u8);
+                        board.select_square(i);
                         cx.notify();
                     }),
                 );
+
                 return element;
             })
             .collect::<Vec<_>>();

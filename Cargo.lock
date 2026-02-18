@@ -3903,7 +3903,7 @@ dependencies = [
 [[package]]
 name = "queenfish"
 version = "0.1.0"
-source = "git+https://github.com/OM3X4/QueenFish#51d9366d9bed0a7fa8c15fd6e29807f1153aac86"
+source = "git+https://github.com/OM3X4/QueenFish#0b1c634e140a756cc245d6dac2ff927e28175bcd"
 dependencies = [
  "once_cell",
  "rand 0.9.2",
